@@ -61,6 +61,7 @@ impl ServerConfig {
             false => {
                 let content = serde_json::to_string(&self)?;
                 Self::write_string(&content)?;
+                println!("config.json is newly created, please restart the server after configuration.");
                 Ok(self)
             }
         }
