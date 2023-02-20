@@ -67,6 +67,15 @@ impl ServerConfig {
     }
 }
 
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self {
+            ip: "0.0.0.0".into(),
+            port: "2333".into(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ClientConfig {
     todo: i32,

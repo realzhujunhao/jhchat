@@ -1,5 +1,4 @@
-mod config;
-use config::ServerConfig;
+pub mod config;
 
 #[test]
 fn mytest() {
