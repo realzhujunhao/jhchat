@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1.25.0", features = ["full"] }
+models = { path="../models" }
