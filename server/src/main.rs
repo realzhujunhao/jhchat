@@ -7,11 +7,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     init::trace();
     let listener = init::connection().await?;
 
-    loop {
-        let (_stream, _addr) = listener.accept().await?;
-
-        tokio::spawn(async move {
-            // TODO
-        });
-    }
+    Ok(())
+    // loop {
+    //     let (_stream, _addr) = listener.accept().await?;
+    //
+    //     tokio::spawn(async move {
+    //         // TODO
+    //     });
+    // }
 }
