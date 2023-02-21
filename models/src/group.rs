@@ -1,6 +1,8 @@
-use crate::communicate::Communicate;
+use crate::{communicate::Communicate, user::User};
 
 pub struct Group {
-    members: Vec<String>,
+    pub uid: String,
+    pub name: String,
+    pub members: Vec<User>,
 }
 

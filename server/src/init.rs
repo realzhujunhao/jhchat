@@ -7,7 +7,9 @@ pub async fn connection() -> io::Result<TcpListener> {
     let default_config = ServerConfig::default();
     let config = default_config.init().expect("fatal error occurs at config initialization");
     let addr = format!("{}:{}", config.ip, config.port);
-    Ok(TcpListener::bind(&addr).await?)
+    let listener = TcpListener::bind(&addr).await?;
+    tracing::info!("server running on {}", addr);
+    Ok(listener)
 }
 
 pub fn trace() {
