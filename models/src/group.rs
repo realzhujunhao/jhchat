@@ -1,8 +1,6 @@
-use crate::user::User;
-
+//TODO
 pub struct Group {
     pub uid: String,
     pub name: String,
-    pub members: Vec<User>,
 }
 

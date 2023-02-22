@@ -1,20 +1,18 @@
+use bytes::Bytes;
+use futures::SinkExt;
 use std::collections::HashMap;
-use bytes::{Bytes, BytesMut};
-use tokio::{
-    io::{self, AsyncWriteExt},
-    net::TcpStream,
-};
-use futures::{SinkExt, StreamExt};
-use tokio_util::codec::{Framed, BytesCodec};
+use tokio::{io::{self, AsyncWriteExt}, net::tcp::OwnedWriteHalf};
+use tokio_util::codec::{BytesCodec, FramedWrite};
 
 #[derive(Debug)]
 pub struct User {
     pub name: String,
-    pub msg_frame: Framed<TcpStream, BytesCodec>,
+    //TODO OTHER INFO
+    pub msg_frame: FramedWrite<OwnedWriteHalf, BytesCodec>,
 }
 
 impl User {
-    pub fn new(name: String, msg_frame: Framed<TcpStream, BytesCodec>) -> Self {
+    pub fn new(name: String, msg_frame: FramedWrite<OwnedWriteHalf, BytesCodec>) -> Self {
         Self { name, msg_frame }
     }
 
@@ -23,13 +21,16 @@ impl User {
         Ok(())
     }
 
-    pub async fn recv(&mut self) -> io::Result<BytesMut> {
-        let content = self.msg_frame.next().await;
-        match content {
-            Some(Ok(msg)) => Ok(msg),
-            _ => Err(io::Error::from(io::ErrorKind::ConnectionAborted))
-        }
-    }
+//     pub async fn recv(&mut self) -> io::Result<BytesMut> {
+//         let content = self.msg_frame.next().await;
+//         match content {
+//             Some(Ok(msg)) => Ok(msg),
+//             _ => Err(io::Error::new(
+//                 io::ErrorKind::ConnectionAborted,
+//                 self.name.clone(),
+//             )),
+//         }
+//     }
 }
 
 #[derive(Debug)]
@@ -43,18 +44,24 @@ impl OnlineUsers {
         Self { list }
     }
 
+    pub async fn send_to_user(&mut self, name: &str, content: Bytes) -> io::Result<()> {
+        let target_user = self
+            .list
+            .get_mut(name)
+            .ok_or(io::Error::new(io::ErrorKind::NotConnected, name.clone()))?;
+        target_user.send(content).await?;
+        Ok(())
+    }
+
     pub async fn kick(&mut self, name: &str) -> io::Result<()> {
         let user = self.list.remove(name);
         match user {
             Some(mut user) => {
                 let stream = user.msg_frame.get_mut();
-                stream.shutdown().await?;
+                let _ = stream.shutdown().await;
                 Ok(())
-            }
-            None => Err(io::Error::new(
-                io::ErrorKind::Other,
-                "attempt to kick an offline user.",
-            )),
+            },
+            None => Ok(())
         }
     }
 
