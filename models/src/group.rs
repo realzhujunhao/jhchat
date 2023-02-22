@@ -1,4 +1,4 @@
-use crate::{communicate::Communicate, user::User};
+use crate::user::User;
 
 pub struct Group {
     pub uid: String,

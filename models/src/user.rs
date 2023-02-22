@@ -1,20 +1,34 @@
 use std::collections::HashMap;
+use bytes::{Bytes, BytesMut};
 use tokio::{
     io::{self, AsyncWriteExt},
     net::TcpStream,
 };
-
-use tokio_util::codec::{Framed, LinesCodec};
+use futures::{SinkExt, StreamExt};
+use tokio_util::codec::{Framed, BytesCodec};
 
 #[derive(Debug)]
 pub struct User {
     pub name: String,
-    pub msg_frame: Framed<TcpStream, LinesCodec>,
+    pub msg_frame: Framed<TcpStream, BytesCodec>,
 }
 
 impl User {
-    pub fn new(name: String, msg_frame: Framed<TcpStream, LinesCodec>) -> Self {
+    pub fn new(name: String, msg_frame: Framed<TcpStream, BytesCodec>) -> Self {
         Self { name, msg_frame }
+    }
+
+    pub async fn send(&mut self, content: Bytes) -> io::Result<()> {
+        self.msg_frame.send(content).await?;
+        Ok(())
+    }
+
+    pub async fn recv(&mut self) -> io::Result<BytesMut> {
+        let content = self.msg_frame.next().await;
+        match content {
+            Some(Ok(msg)) => Ok(msg),
+            _ => Err(io::Error::from(io::ErrorKind::ConnectionAborted))
+        }
     }
 }
 

@@ -5,7 +5,6 @@ use std::{error::Error, sync::Arc};
 use handler::handle_connection;
 use tokio::sync::Mutex;
 use models::user::OnlineUsers;
-use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -18,7 +17,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let (stream, addr) = listener.accept().await?;
 
         tokio::spawn(async move {
-            handle_connection(stream, addr, online_users).await;
+            handle_connection(stream, addr, online_users).await.unwrap();
         });
     }
 }
