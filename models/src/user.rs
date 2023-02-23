@@ -44,7 +44,7 @@ impl OnlineUsers {
         Self { list }
     }
 
-    pub async fn send_to_user(&mut self, name: &str, content: Bytes) -> io::Result<()> {
+    pub async fn send_to(&mut self, name: &str, content: Bytes) -> io::Result<()> {
         let target_user = self
             .list
             .get_mut(name)

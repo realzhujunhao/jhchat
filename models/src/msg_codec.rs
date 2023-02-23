@@ -78,20 +78,12 @@ impl MsgCodec {
     }
 }
 
-// fn without_carriage_return(s: &[u8]) -> &[u8] {
-//     if let Some(&b'\r') = s.last() {
-//         &s[..s.len() - 1]
-//     } else {
-//         s
-//     }
-// }
 
 impl Decoder for MsgCodec {
     type Item = Message;
     type Error = MsgCodecError;
 
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        println!("{:?}", buf);
         loop {
             println!("{:?}", self);
             match self.status() {

@@ -1,43 +1,53 @@
+use bytes::Bytes;
 use models::{
     command::Command,
     message::{Content, Message},
     msg_codec::MsgCodec,
     user::{OnlineUsers, User},
 };
-use std::{error::Error, io, net::SocketAddr, sync::Arc};
+use std::{io, net::SocketAddr, sync::Arc};
 use tokio::{
     net::tcp::{OwnedReadHalf, OwnedWriteHalf},
     sync::Mutex,
 };
-// use bytes::Bytes;
 use tokio_stream::StreamExt;
 use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
 
 pub async fn help(online_users: Arc<Mutex<OnlineUsers>>, username: &str) -> io::Result<()> {
     let mut online_users = online_users.lock().await;
-    let _ = online_users
-        .send_to_user(username, Command::help().into())
-        .await;
+    online_users
+        .send_to(username, Bytes::from(Command::help()))
+        .await?;
     Ok(())
 }
 
 pub async fn online_list(online_users: Arc<Mutex<OnlineUsers>>, username: &str) -> io::Result<()> {
-    let online_users = online_users.lock().await;
+    let mut online_users = online_users.lock().await;
     let name_list = online_users.list();
-
+    online_users
+        .send_to(username, Bytes::from(name_list.join("\n")))
+        .await?;
     Ok(())
-} 
+}
 
-// pub async fn send_msg(online_users: Arc<Mutex<OnlineUsers>>, msg: &Message, from: &str) -> io::Result<()> {
-//     let target_user = msg.args.get(0).ok_or(io::Error::from(io::ErrorKind::InvalidInput))?;
-//     if let Content::Text(ref text) = msg.content {
-//         let text_owned = text.clone();
-//         let text_byte = Bytes::from(text_owned.as_bytes());
-//         let mut online_users = online_users.lock().await;
-//         online_users.send_to_user(target_user, text_byte).await; 
-//     }
-//     Ok(())
-// }
+pub async fn send_msg(
+    online_users: Arc<Mutex<OnlineUsers>>,
+    msg: &Message,
+    from: &str,
+) -> io::Result<()> {
+    let target_user = msg
+        .args
+        .get(0)
+        .ok_or(io::Error::from(io::ErrorKind::InvalidInput))?;
+    if let Content::Text(ref text) = msg.content {
+        let text_owned = format!("{}: {}", from, text);
+        let mut online_users = online_users.lock().await;
+        online_users
+            .send_to(target_user, Bytes::from(text_owned))
+            .await?;
+    }
+    Ok(())
+}
 
 pub async fn login(
     online_users: Arc<Mutex<OnlineUsers>>,
