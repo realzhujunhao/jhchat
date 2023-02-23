@@ -65,6 +65,11 @@ impl OnlineUsers {
         }
     }
 
+    pub fn list(&self) -> Vec<String> {
+        let name_vec: Vec<String> = self.list.keys().map(|s| s.clone()).collect();
+        name_vec
+    }
+
     pub async fn debug(&self) {
         for (key, val) in self.list.iter() {
             println!("{:?} -> {:?}", key, val);

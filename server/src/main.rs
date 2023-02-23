@@ -1,5 +1,6 @@
 mod init;
 mod process;
+mod handler;
 use std::{error::Error, sync::Arc, env};
 
 use process::process;
