@@ -5,6 +5,7 @@ use crate::message::Content;
 
 #[derive(Debug)]
 pub enum Command {
+    Login,
     OnlineList,
     SendMsgToUser,
     SendFileToUser,
@@ -18,6 +19,7 @@ impl FromStr for Command {
             "OnlineList" => Ok(Self::OnlineList),
             "SendMsgToUser" => Ok(Self::SendMsgToUser),
             "SendFileToUser" => Ok(Self::SendMsgToUser),
+            "Login" => Ok(Self::Login),
             "Help" => Ok(Self::Help),
             _ => Err(()),
         }
@@ -30,6 +32,7 @@ impl From<BytesMut> for Command {
             b"OnlineList" => Self::OnlineList,
             b"SendMsgToUser" => Self::SendMsgToUser,
             b"SendFileToUser" => Self::SendFileToUser,
+            b"Login" => Self::Login,
             _ => Self::Help,
         }
     }

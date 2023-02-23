@@ -1,6 +1,6 @@
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{Buf, BytesMut};
 use std::{cmp, fmt::Display, io, usize};
-use tokio_util::codec::{Decoder, Encoder};
+use tokio_util::codec::Decoder;
 
 use crate::{
     command::Command,
@@ -78,20 +78,22 @@ impl MsgCodec {
     }
 }
 
-fn without_carriage_return(s: &[u8]) -> &[u8] {
-    if let Some(&b'\r') = s.last() {
-        &s[..s.len() - 1]
-    } else {
-        s
-    }
-}
+// fn without_carriage_return(s: &[u8]) -> &[u8] {
+//     if let Some(&b'\r') = s.last() {
+//         &s[..s.len() - 1]
+//     } else {
+//         s
+//     }
+// }
 
 impl Decoder for MsgCodec {
     type Item = Message;
     type Error = MsgCodecError;
 
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        println!("{:?}", buf);
         loop {
+            println!("{:?}", self);
             match self.status() {
                 MsgCodecStatus::Command => {
                     let read_to = cmp::min(self.max_arg_index, buf.len());
@@ -109,7 +111,7 @@ impl Decoder for MsgCodec {
                         }
                         Some(offset_from_next) => {
                             self.cmd_index = self.next_index + offset_from_next;
-                            self.next_index = read_to;
+                            self.next_index = self.cmd_index;
                         }
                     }
                 }
@@ -129,7 +131,7 @@ impl Decoder for MsgCodec {
                         }
                         Some(offset_from_next) => {
                             self.args_index = self.next_index + offset_from_next;
-                            self.next_index = read_to;
+                            self.next_index = self.args_index;
                         }
                     }
                 }
@@ -141,13 +143,16 @@ impl Decoder for MsgCodec {
                     match end_offset {
                         Some(offset) => {
                             let command_bytes = buf.split_to(self.cmd_index);
-                            let command = Command::from(command_bytes);
                             buf.advance(1); // TODO only works for ASCII char
-                            let args_bytes = buf.split_to(self.args_index - self.cmd_index);
+                            let args_bytes = buf.split_to(self.args_index - self.cmd_index - 1);
+                            buf.advance(1); // TODO only works for ASCII char
+                            let content_bytes =
+                                buf.split_to(self.args_index + offset - self.args_index - 1);
+
+                            let command = Command::from(command_bytes);
                             let args_string = String::from_utf8(args_bytes.to_vec()).unwrap();
                             let args: Vec<String> =
                                 args_string.split(",").map(|s| String::from(s)).collect();
-                            let content_bytes = buf.split_to(offset - self.args_index);
                             let content = match command.content() {
                                 Content::Text(_) => {
                                     let text = String::from_utf8(content_bytes.to_vec()).unwrap();
@@ -155,7 +160,8 @@ impl Decoder for MsgCodec {
                                 }
                                 Content::Bytes(_) => Content::Bytes(content_bytes),
                             };
-                            buf.advance(1);
+                            buf.advance(buf.len());
+                            self.init();
                             return Ok(Some(Message {
                                 command,
                                 args,

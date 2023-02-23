@@ -1,14 +1,15 @@
 mod init;
-mod handler;
-use std::{error::Error, sync::Arc};
+mod process;
+use std::{error::Error, sync::Arc, env};
 
-use handler::handle_connection;
+use process::process;
 use tokio::sync::Mutex;
 use models::user::OnlineUsers;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     init::trace();
+    env::set_var("RUST_BACKTRACE", "1");
     let online_users = Arc::new(Mutex::new(OnlineUsers::new()));
     let listener = init::connection().await?;
 
@@ -17,7 +18,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let (stream, addr) = listener.accept().await?;
 
         tokio::spawn(async move {
-            handle_connection(stream, addr, online_users).await.unwrap();
+            process(stream, addr, online_users).await.unwrap();
         });
     }
 }

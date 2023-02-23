@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use futures::SinkExt;
 use models::{user::{OnlineUsers, User}, command::Command, msg_codec::MsgCodec, message::Content};
-use std::{error::Error, net::SocketAddr, sync::Arc, str::FromStr};
+use std::{error::Error, net::SocketAddr, sync::Arc};
 use tokio::{
     io,
     net::{
@@ -13,7 +13,7 @@ use tokio::{
 use tokio_stream::StreamExt;
 use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
 
-pub async fn handle_connection(
+pub async fn process(
     stream: TcpStream,
     addr: SocketAddr,
     online_users: Arc<Mutex<OnlineUsers>>,
@@ -21,19 +21,24 @@ pub async fn handle_connection(
     let (rd, wt) = stream.into_split();
     let mut rd_frame = FramedRead::new(rd, MsgCodec::new());
     let mut wt_frame = FramedWrite::new(wt, BytesCodec::new());
-    // wt_frame.send(Bytes::from("username: ")).await?;
-    // let username = request_username(&mut rd_frame, addr).await?;
-    // push_user(Arc::clone(&online_users), username.clone(), wt_frame).await;
+    wt_frame.send(Bytes::from("username: ")).await?;
+    let username = request_username(&mut rd_frame, addr).await?;
+    println!("{} has joined server.", username);
+    push_user(Arc::clone(&online_users), username.clone(), wt_frame).await;
 
     loop {
         match rd_frame.next().await {
             Some(Ok(msg)) => {
                 println!("receive");
                 println!("{:?}", msg);
+                match msg.command {
+                    Command::Help => handle_help(Arc::clone(&online_users), &username).await.unwrap(),
+                    _ => ()
+                }
             },
             _ => {
                 println!("disconnect");
-                // online_users.lock().await.kick(&username).await?;
+                online_users.lock().await.kick(&username).await?;
                 break;
             }
         }
@@ -59,9 +64,11 @@ async fn request_username(
             return Err(Box::new(io::Error::from(io::ErrorKind::ConnectionAborted)));
         }
     };
-    // let username = String::from_utf8(username.content.to_vec())?.trim().to_string();
-    // Ok(username)
-    Ok("zhittty".into())
+    if let Content::Text(username) = username.content {
+        return Ok(username);
+    } else {
+        return Err(Box::new(io::Error::from(io::ErrorKind::InvalidData)));
+    }
 }
 
 async fn push_user(
