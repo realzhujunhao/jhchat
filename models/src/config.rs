@@ -49,6 +49,7 @@ impl Config for ClientConfig {}
 pub struct ServerConfig {
     pub ip: String,
     pub port: String,
+    pub file_dir: String,
 }
 
 impl ServerConfig {
@@ -73,6 +74,7 @@ impl Default for ServerConfig {
         Self {
             ip: "0.0.0.0".into(),
             port: "2333".into(),
+            file_dir: "/Users/junhaozhu/Downloads".into(),
         }
     }
 }

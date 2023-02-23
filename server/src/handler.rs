@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use futures::SinkExt;
-use models::user::{OnlineUsers, User};
-use std::{error::Error, net::SocketAddr, sync::Arc};
+use models::{user::{OnlineUsers, User}, command::Command, msg_codec::MsgCodec, message::Content};
+use std::{error::Error, net::SocketAddr, sync::Arc, str::FromStr};
 use tokio::{
     io,
     net::{
@@ -19,20 +19,21 @@ pub async fn handle_connection(
     online_users: Arc<Mutex<OnlineUsers>>,
 ) -> Result<(), Box<dyn Error>> {
     let (rd, wt) = stream.into_split();
-    let mut rd_frame = FramedRead::new(rd, BytesCodec::new());
+    let mut rd_frame = FramedRead::new(rd, MsgCodec::new());
     let mut wt_frame = FramedWrite::new(wt, BytesCodec::new());
-    wt_frame.send(Bytes::from("username: ")).await?;
-    let username = request_username(&mut rd_frame, addr).await?;
-    push_user(Arc::clone(&online_users), username.clone(), wt_frame).await;
+    // wt_frame.send(Bytes::from("username: ")).await?;
+    // let username = request_username(&mut rd_frame, addr).await?;
+    // push_user(Arc::clone(&online_users), username.clone(), wt_frame).await;
+
     loop {
         match rd_frame.next().await {
             Some(Ok(msg)) => {
-                let content = String::from_utf8(msg.to_vec())?.trim().to_string();
-                println!("{}", content);
-                online_users.lock().await.debug().await;
+                println!("receive");
+                println!("{:?}", msg);
             },
             _ => {
-                online_users.lock().await.kick(&username).await?;
+                println!("disconnect");
+                // online_users.lock().await.kick(&username).await?;
                 break;
             }
         }
@@ -41,8 +42,14 @@ pub async fn handle_connection(
     Ok(())
 }
 
+async fn handle_help(online_users: Arc<Mutex<OnlineUsers>>, username: &str) -> io::Result<()> {
+    let mut online_users = online_users.lock().await;
+    let _ = online_users.send_to_user(username, Command::help().into()).await;
+    Ok(())
+}
+
 async fn request_username(
-    frame: &mut FramedRead<OwnedReadHalf, BytesCodec>,
+    frame: &mut FramedRead<OwnedReadHalf, MsgCodec>,
     addr: SocketAddr,
 ) -> Result<String, Box<dyn Error>> {
     let username = match frame.next().await {
@@ -52,8 +59,9 @@ async fn request_username(
             return Err(Box::new(io::Error::from(io::ErrorKind::ConnectionAborted)));
         }
     };
-    let username = String::from_utf8(username.to_vec())?.trim().to_string();
-    Ok(username)
+    // let username = String::from_utf8(username.content.to_vec())?.trim().to_string();
+    // Ok(username)
+    Ok("zhittty".into())
 }
 
 async fn push_user(
