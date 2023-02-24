@@ -34,6 +34,9 @@ pub async fn process(
                         Command::SendMsgToUser => {
                             handler::send_msg(Arc::clone(&online_users), &username, msg).await
                         }
+                        Command::SendFileToUser => {
+                            handler::send_msg(Arc::clone(&online_users), &username, msg).await
+                        }
                         Command::Help => {
                             handler::help(Arc::clone(&online_users), &username).await
                         }
