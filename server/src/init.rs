@@ -7,8 +7,7 @@ use tracing_subscriber::{filter::LevelFilter, fmt::format::FmtSpan, EnvFilter};
 
 pub async fn connection() -> Result<TcpListener> {
     let default_config = ServerConfig::default();
-    let config = default_config
-        .init().map_err(|_| Error::Config)?;
+    let config = default_config.init().map_err(|_| Error::Config)?;
     let addr = format!("{}:{}", config.ip, config.port);
     let listener = TcpListener::bind(&addr).await.map_err(|_| Error::Listen)?;
     tracing::info!("server running on {}", addr);

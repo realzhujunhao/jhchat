@@ -15,7 +15,9 @@ use tokio_stream::StreamExt;
 use tokio_util::codec::{FramedRead, FramedWrite};
 
 pub async fn help(online_users: Arc<Mutex<OnlineUsers>>, from: &str) -> Result<()> {
-    send_msg(online_users, from, Command::help()).await?;
+    let mut msg = Command::help();
+    msg.args[0] = from.to_string();
+    send_msg(online_users, from, msg).await?;
     Ok(())
 }
 
@@ -78,20 +80,27 @@ pub async fn login(
     }
 }
 
+pub async fn disconnect(online_users: Arc<Mutex<OnlineUsers>>, name: &str) -> Result<()> {
+    let mut online_users = online_users.lock().await;
+    online_users.kick(name)?;
+    Ok(())
+}
+
 pub fn error(err: Result<()>) {
     match err {
         Ok(()) => (),
         Err(e) => match e {
-        Error::Offline => (),
-        Error::Config => tracing::warn!("failed to read config."),
-        Error::ServerToClient => tracing::warn!("lost one pack from server to client."),
-        Error::Disconnect => tracing::info!("user disconnect."),
-        Error::Channel => tracing::warn!("channel does not work properly."),
-        Error::Listen => tracing::warn!("unable to listen to specified port."),
-        Error::Unreachable => tracing::warn!("unexpected logical error."),
-        Error::RequestFormat => tracing::info!("receive a request of wrong format."),
-        Error::InvalidMessage => tracing::warn!("broken message."),
-    }}
+            Error::Offline => tracing::info!("attempt to interact with offline user"),
+            Error::Config => tracing::warn!("failed to read config."),
+            Error::ServerToClient => tracing::warn!("lost one pack from server to client."),
+            Error::Disconnect => tracing::info!("user disconnect."),
+            Error::Channel => tracing::warn!("channel does not work properly."),
+            Error::Listen => tracing::warn!("unable to listen to specified port."),
+            Error::Unreachable => tracing::warn!("unexpected logical error."),
+            Error::RequestFormat => tracing::info!("receive a request of wrong format."),
+            Error::InvalidMessage => tracing::warn!("broken message."),
+        },
+    }
 }
 
 async fn push_user(online_users: Arc<Mutex<OnlineUsers>>, username: String, tx: Tx) {

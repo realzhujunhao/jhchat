@@ -53,16 +53,12 @@ impl From<BytesMut> for Command {
 impl Command {
     pub fn help() -> Message {
         let content_text = format!(
-            "{}\n{}\n{}\n",
+            "\n{}\n{}\n{}\n",
             "OnlineList#|$  ->  Request name list of online users",
             "SendMsgToUser#{{username}}|{{msg}}$  ->  send msg to the specified user",
             "SendFileToUser#{{username}}|{{filepath}}$  ->  send file to the specified user"
         );
-        Message {
-            command: Command::Help,
-            args: vec!["".to_string()],
-            content: Content::Text(content_text)
-        }
+        Message::plain_text(Command::Help, &content_text)
     }
 
     pub fn content(&self) -> Content {

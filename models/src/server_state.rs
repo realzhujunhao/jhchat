@@ -45,12 +45,13 @@ impl OnlineUsers {
 
     pub fn msg_list(&self) -> Message {
         let list_vec: Vec<String> = self.list.keys().map(|s| s.clone()).collect();
-        let list_string = list_vec.join("\n");
-        Message {
-            command: Command::OnlineList,
-            args: vec!["".to_string()],
-            content: Content::Text(list_string),
-        }
+        let list_string = list_vec.join(",");
+        Message::plain_text(Command::OnlineList, &list_string)
+    }
+
+    pub fn kick(&mut self, name: &str) -> Result<()> {
+        self.list.remove(name).ok_or(Error::Offline)?;
+        Ok(())
     }
 
     pub fn debug(&self) {
