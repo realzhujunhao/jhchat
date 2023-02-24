@@ -10,3 +10,4 @@ futures.workspace = true
 tokio = { workspace = true, features = ["full"] }
 tokio-util.workspace = true
 bytes.workspace = true
+iced.workspace = true

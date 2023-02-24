@@ -51,7 +51,7 @@ pub async fn process(
                 handler::error(ok_error);
             }
             Some(msg) = rx.recv() => {
-                handler::recv_msg(msg, &mut wt_frame).await?;
+                handler::error(handler::recv_msg(msg, &mut wt_frame).await);
             }
         }
     }
