@@ -1,5 +1,5 @@
-use bytes::{BytesMut, BufMut};
 use crate::command::Command;
+use bytes::{BufMut, BytesMut};
 
 #[derive(Debug)]
 pub enum Content {
@@ -31,7 +31,7 @@ impl Into<BytesMut> for Message {
         let cmd_bytes: BytesMut = self.command.into();
         let args_bytes = BytesMut::from(args.as_bytes());
         let content_bytes: BytesMut = self.content.into();
-        
+
         bytes.reserve(cmd_bytes.len() + args_bytes.len() + content_bytes.len() + 3);
 
         bytes.put(cmd_bytes);
@@ -43,4 +43,39 @@ impl Into<BytesMut> for Message {
         bytes
     }
 }
+
+impl Message {
+    pub fn new(command: Command, args: Vec<String>, content: Content) -> Self {
+        Self {
+            command,
+            args,
+            content,
+        }
+    }
+
+    pub fn no_arg(command: Command, content: Content) -> Self {
+        Self {
+            command,
+            args: vec!["".to_string()],
+            content,
+        }
+    }
+
+    pub fn plain_text(command: Command, text: &str) -> Self {
+        Self {
+            command,
+            args: vec!["".to_string()],
+            content: Content::Text(text.to_string()),
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
 

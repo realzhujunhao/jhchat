@@ -1,11 +1,16 @@
-use std::{io, collections::HashMap};
-use crate::{message::Message, user::User};
-use tokio::io::AsyncWriteExt;
+use crate::{
+    command::Command,
+    message::{Content, Message},
+    error::{Result, Error},
+};
+use std::collections::HashMap;
+use tokio::sync::mpsc;
 
+type Tx = mpsc::Sender<Message>;
 
 #[derive(Debug)]
 pub struct OnlineUsers {
-    pub list: HashMap<String, User>,
+    pub list: HashMap<String, Tx>,
 }
 
 impl OnlineUsers {
@@ -14,25 +19,23 @@ impl OnlineUsers {
         Self { list }
     }
 
-    pub async fn send_from(&mut self, from: &str, msg: Message) -> io::Result<()> {
-        // let target_user = self
-            // .list
-            // .get_mut(name)
-            // .ok_or(io::Error::new(io::ErrorKind::NotConnected, name.clone()))?;
-        // target_user.send(content).await?;
-        Ok(())
-    }
-
-    pub async fn kick(&mut self, name: &str) -> io::Result<()> {
-        let user = self.list.remove(name);
-        match user {
-            Some(mut user) => {
-                let stream = user.msg_frame.get_mut();
-                let _ = stream.shutdown().await;
-                Ok(())
-            },
-            None => Ok(())
+    pub async fn send_from(&mut self, from: &str, mut msg: Message) -> Result<()> {
+        let target = msg
+            .args
+            .get(0)
+            .ok_or(Error::InvalidMessage)?;
+        let tx = self
+            .list
+            .get_mut(target)
+            .ok_or(Error::Offline)?;
+        if msg.args.len() == 0 {
+            return Err(Error::InvalidMessage);
         }
+        msg.args[0] = String::from(from);
+        tx.send(msg)
+            .await
+            .map_err(|_| Error::Channel)?;
+        Ok(())
     }
 
     pub fn list(&self) -> Vec<String> {
@@ -40,7 +43,17 @@ impl OnlineUsers {
         name_vec
     }
 
-    pub async fn debug(&self) {
+    pub fn msg_list(&self) -> Message {
+        let list_vec: Vec<String> = self.list.keys().map(|s| s.clone()).collect();
+        let list_string = list_vec.join("\n");
+        Message {
+            command: Command::OnlineList,
+            args: vec!["".to_string()],
+            content: Content::Text(list_string),
+        }
+    }
+
+    pub fn debug(&self) {
         for (key, val) in self.list.iter() {
             println!("{:?} -> {:?}", key, val);
         }

@@ -1,13 +1,16 @@
-use tracing_subscriber::{filter::LevelFilter, fmt::format::FmtSpan, EnvFilter};
+use models::{
+    config::ServerConfig,
+    error::{Error, Result},
+};
 use tokio::net::TcpListener;
-use models::config::ServerConfig;
-use std::io;
+use tracing_subscriber::{filter::LevelFilter, fmt::format::FmtSpan, EnvFilter};
 
-pub async fn connection() -> io::Result<TcpListener> {
+pub async fn connection() -> Result<TcpListener> {
     let default_config = ServerConfig::default();
-    let config = default_config.init().expect("fatal error occurs at config initialization");
+    let config = default_config
+        .init().map_err(|_| Error::Config)?;
     let addr = format!("{}:{}", config.ip, config.port);
-    let listener = TcpListener::bind(&addr).await?;
+    let listener = TcpListener::bind(&addr).await.map_err(|_| Error::Listen)?;
     tracing::info!("server running on {}", addr);
     Ok(listener)
 }

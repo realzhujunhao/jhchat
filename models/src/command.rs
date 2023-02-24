@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use bytes::BytesMut;
 
-use crate::message::Content;
+use crate::message::{Content, Message};
 
 #[derive(Debug)]
 pub enum Command {
@@ -51,13 +51,18 @@ impl From<BytesMut> for Command {
 }
 
 impl Command {
-    pub fn help() -> String {
-        format!(
+    pub fn help() -> Message {
+        let content_text = format!(
             "{}\n{}\n{}\n",
             "OnlineList#|$  ->  Request name list of online users",
             "SendMsgToUser#{{username}}|{{msg}}$  ->  send msg to the specified user",
             "SendFileToUser#{{username}}|{{filepath}}$  ->  send file to the specified user"
-        )
+        );
+        Message {
+            command: Command::Help,
+            args: vec!["".to_string()],
+            content: Content::Text(content_text)
+        }
     }
 
     pub fn content(&self) -> Content {

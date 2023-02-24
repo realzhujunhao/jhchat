@@ -10,7 +10,7 @@ use models::server_state::OnlineUsers;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     init::trace();
-    env::set_var("RUST_BACKTRACE", "1");
+    env::set_var("RUST_BACKTRACE", "full");
     let online_users = Arc::new(Mutex::new(OnlineUsers::new()));
     let listener = init::connection().await?;
 
@@ -19,7 +19,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let (stream, addr) = listener.accept().await?;
 
         tokio::spawn(async move {
-            process(stream, addr, online_users).await.unwrap();
+            let result = process(stream, addr, online_users).await;
+            handler::error(result);
         });
     }
 }

@@ -1,27 +1,42 @@
-use bytes::Bytes;
+use futures::SinkExt;
 use models::{
     command::Command,
+    error::{Error, Result},
     message::{Content, Message},
     msg_codec::MsgCodec,
-    user::User,
     server_state::OnlineUsers,
 };
-use std::{io, net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc};
 use tokio::{
-    net::tcp::{OwnedReadHalf, OwnedWriteHalf},
-    sync::Mutex,
+    net::tcp::{ReadHalf, WriteHalf},
+    sync::{mpsc, Mutex},
 };
 use tokio_stream::StreamExt;
-use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
+use tokio_util::codec::{FramedRead, FramedWrite};
 
-pub async fn help(online_users: Arc<Mutex<OnlineUsers>>, username: &str) -> io::Result<()> {
-    let mut online_users = online_users.lock().await;
+pub async fn help(online_users: Arc<Mutex<OnlineUsers>>, from: &str) -> Result<()> {
+    send_msg(online_users, from, Command::help()).await?;
     Ok(())
 }
 
-pub async fn online_list(online_users: Arc<Mutex<OnlineUsers>>, username: &str) -> io::Result<()> {
-    let mut online_users = online_users.lock().await;
-    let name_list = online_users.list();
+pub async fn online_list(online_users: Arc<Mutex<OnlineUsers>>, from: &str) -> Result<()> {
+    let temp = Arc::clone(&online_users);
+    let temp = temp.lock().await;
+    let mut msg = temp.msg_list();
+    drop(temp);
+    msg.args[0] = from.to_string();
+    send_msg(online_users, from, msg).await?;
+    Ok(())
+}
+
+pub async fn recv_msg(
+    msg: Message,
+    wt_frame: &mut FramedWrite<WriteHalf<'_>, MsgCodec>,
+) -> Result<()> {
+    wt_frame
+        .send(msg)
+        .await
+        .map_err(|_| Error::ServerToClient)?;
     Ok(())
 }
 
@@ -29,47 +44,57 @@ pub async fn send_msg(
     online_users: Arc<Mutex<OnlineUsers>>,
     from: &str,
     msg: Message,
-) -> io::Result<()> {
-    let target_user = msg
-        .args
-        .get(0)
-        .ok_or(io::Error::from(io::ErrorKind::InvalidInput))?;
+) -> Result<()> {
     let mut online_users = online_users.lock().await;
     online_users.send_from(from, msg).await?;
     Ok(())
 }
 
+type Tx = mpsc::Sender<Message>;
+type Rx = mpsc::Receiver<Message>;
+
 pub async fn login(
     online_users: Arc<Mutex<OnlineUsers>>,
-    rd_frame: &mut FramedRead<OwnedReadHalf, MsgCodec>,
-    wt_frame: FramedWrite<OwnedWriteHalf, BytesCodec>,
+    rd_frame: &mut FramedRead<ReadHalf<'_>, MsgCodec>,
     addr: SocketAddr,
-) -> io::Result<String> {
+) -> Result<(String, Rx)> {
     if let Some(Ok(msg)) = rd_frame.next().await {
         match msg.command {
             Command::Login => {
                 if let Content::Text(name) = msg.content {
-                    push_user(online_users, name.clone(), wt_frame).await;
+                    let (tx, rx) = mpsc::channel(128);
+                    push_user(online_users, name.clone(), tx).await;
                     tracing::info!("{} has joined server.", name);
-                    Ok(name)
+                    Ok((name, rx))
                 } else {
-                    Err(io::Error::from(io::ErrorKind::InvalidData))
+                    Err(Error::InvalidMessage)
                 }
             }
-            _ => Err(io::Error::from(io::ErrorKind::InvalidData)),
+            _ => Err(Error::InvalidMessage),
         }
     } else {
         tracing::error!("Failed to get username from {}. Client disconnected.", addr);
-        Err(io::Error::from(io::ErrorKind::ConnectionAborted))
+        Err(Error::Disconnect)
     }
 }
 
-async fn push_user(
-    online_users: Arc<Mutex<OnlineUsers>>,
-    username: String,
-    frame: FramedWrite<OwnedWriteHalf, BytesCodec>,
-) {
-    let user = User::new(username.clone(), frame);
+pub fn error(err: Result<()>) {
+    match err {
+        Ok(()) => (),
+        Err(e) => match e {
+        Error::Offline => (),
+        Error::Config => tracing::warn!("failed to read config."),
+        Error::ServerToClient => tracing::warn!("lost one pack from server to client."),
+        Error::Disconnect => tracing::info!("user disconnect."),
+        Error::Channel => tracing::warn!("channel does not work properly."),
+        Error::Listen => tracing::warn!("unable to listen to specified port."),
+        Error::Unreachable => tracing::warn!("unexpected logical error."),
+        Error::RequestFormat => tracing::info!("receive a request of wrong format."),
+        Error::InvalidMessage => tracing::warn!("broken message."),
+    }}
+}
+
+async fn push_user(online_users: Arc<Mutex<OnlineUsers>>, username: String, tx: Tx) {
     let mut online_users = online_users.lock().await;
-    online_users.list.insert(username.clone(), user);
+    online_users.list.insert(username.clone(), tx);
 }

@@ -108,7 +108,6 @@ impl Decoder for MsgCodec {
 
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         loop {
-            println!("{:?}", self);
             match self.status() {
                 MsgCodecStatus::Command => {
                     let read_to = cmp::min(self.max_arg_index, buf.len());
