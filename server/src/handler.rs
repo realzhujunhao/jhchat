@@ -3,7 +3,8 @@ use models::{
     command::Command,
     message::{Content, Message},
     msg_codec::MsgCodec,
-    user::{OnlineUsers, User},
+    user::User,
+    server_state::OnlineUsers,
 };
 use std::{io, net::SocketAddr, sync::Arc};
 use tokio::{
@@ -15,37 +16,26 @@ use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
 
 pub async fn help(online_users: Arc<Mutex<OnlineUsers>>, username: &str) -> io::Result<()> {
     let mut online_users = online_users.lock().await;
-    online_users
-        .send_to(username, Bytes::from(Command::help()))
-        .await?;
     Ok(())
 }
 
 pub async fn online_list(online_users: Arc<Mutex<OnlineUsers>>, username: &str) -> io::Result<()> {
     let mut online_users = online_users.lock().await;
     let name_list = online_users.list();
-    online_users
-        .send_to(username, Bytes::from(name_list.join("\n")))
-        .await?;
     Ok(())
 }
 
 pub async fn send_msg(
     online_users: Arc<Mutex<OnlineUsers>>,
-    msg: &Message,
     from: &str,
+    msg: Message,
 ) -> io::Result<()> {
     let target_user = msg
         .args
         .get(0)
         .ok_or(io::Error::from(io::ErrorKind::InvalidInput))?;
-    if let Content::Text(ref text) = msg.content {
-        let text_owned = format!("{}: {}", from, text);
-        let mut online_users = online_users.lock().await;
-        online_users
-            .send_to(target_user, Bytes::from(text_owned))
-            .await?;
-    }
+    let mut online_users = online_users.lock().await;
+    online_users.send_from(from, msg).await?;
     Ok(())
 }
 

@@ -5,6 +5,7 @@ pub mod group;
 pub mod user;
 pub mod msg_codec;
 pub mod message; 
+pub mod server_state;
 
 #[test]
 fn mytest() {

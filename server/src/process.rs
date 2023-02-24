@@ -23,7 +23,7 @@ pub async fn process(
                 match msg.command {
                     Command::Help => handler::help(Arc::clone(&online_users), &username).await?,
                     Command::OnlineList => handler::online_list(Arc::clone(&online_users), &username).await?,
-                    Command::SendMsgToUser => handler::send_msg(Arc::clone(&online_users), &msg, &username).await?,
+                    Command::SendMsgToUser => handler::send_msg(Arc::clone(&online_users), &username, msg).await?,
                     _ => (),
                 }
             }

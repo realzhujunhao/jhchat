@@ -26,6 +26,18 @@ impl FromStr for Command {
     }
 }
 
+impl Into<BytesMut> for Command {
+    fn into(self) -> BytesMut {
+        match self {
+            Self::SendMsgToUser => BytesMut::from("SendMsgToUser"),
+            Self::SendFileToUser => BytesMut::from("SendFileToUser"),
+            Self::OnlineList => BytesMut::from("OnlineList"),
+            Self::Help => BytesMut::from("Help"),
+            Self::Login => BytesMut::from("Login"),
+        }
+    }
+}
+
 impl From<BytesMut> for Command {
     fn from(value: BytesMut) -> Self {
         match value.as_ref() {

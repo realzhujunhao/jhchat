@@ -5,7 +5,7 @@ use std::{error::Error, sync::Arc, env};
 
 use process::process;
 use tokio::sync::Mutex;
-use models::user::OnlineUsers;
+use models::server_state::OnlineUsers;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {

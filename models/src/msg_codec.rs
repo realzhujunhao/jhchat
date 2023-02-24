@@ -1,6 +1,6 @@
-use bytes::{Buf, BytesMut};
+use bytes::{Buf, BytesMut, BufMut};
 use std::{cmp, fmt::Display, io, usize};
-use tokio_util::codec::Decoder;
+use tokio_util::codec::{Decoder, Encoder};
 
 use crate::{
     command::Command,
@@ -10,14 +10,18 @@ use crate::{
 #[derive(Debug)]
 pub enum MsgCodecError {
     Io(io::Error),
-    InvalidMessage,
+    InvalidCommand,
+    InvalidArguments,
+    InvalidContent,
 }
 
 impl Display for MsgCodecError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Io(e) => write!(f, "{}", e),
-            Self::InvalidMessage => write!(f, "InvalidMessage"),
+            Self::InvalidCommand => write!(f, "InvalidCommand"),
+            Self::InvalidArguments => write!(f, "InvalidArgujments"),
+            Self::InvalidContent => write!(f, "InvalidContent"),
         }
     }
 }
@@ -78,6 +82,25 @@ impl MsgCodec {
     }
 }
 
+fn trim_front(buf: &mut BytesMut) {
+    while let Some(b'\n') = buf.first() {
+        buf.advance(1);
+    }
+    while let Some(b'\r') = buf.first() {
+        buf.advance(1);
+    }
+}
+
+impl Encoder<Message> for MsgCodec {
+    type Error = MsgCodecError;
+
+    fn encode(&mut self, item: Message, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        let bytes: BytesMut = item.into();
+        dst.reserve(bytes.len());
+        dst.put(bytes);
+        Ok(())
+    }
+}
 
 impl Decoder for MsgCodec {
     type Item = Message;
@@ -95,7 +118,7 @@ impl Decoder for MsgCodec {
                     match offset {
                         None if buf.len() > self.max_arg_index => {
                             self.is_discarding = true;
-                            return Err(MsgCodecError::InvalidMessage);
+                            return Err(MsgCodecError::InvalidCommand);
                         }
                         None => {
                             self.next_index = read_to;
@@ -115,7 +138,7 @@ impl Decoder for MsgCodec {
                     match offset {
                         None if buf.len() > self.max_arg_index => {
                             self.is_discarding = true;
-                            return Err(MsgCodecError::InvalidMessage);
+                            return Err(MsgCodecError::InvalidArguments);
                         }
                         None => {
                             self.next_index = read_to;
@@ -134,13 +157,14 @@ impl Decoder for MsgCodec {
                         .position(|b| *b == b'$');
                     match end_offset {
                         Some(offset) => {
-                            let command_bytes = buf.split_to(self.cmd_index);
+                            let mut command_bytes = buf.split_to(self.cmd_index);
                             buf.advance(1); // TODO only works for ASCII char
                             let args_bytes = buf.split_to(self.args_index - self.cmd_index - 1);
                             buf.advance(1); // TODO only works for ASCII char
                             let content_bytes =
                                 buf.split_to(self.args_index + offset - self.args_index - 1);
 
+                            trim_front(&mut command_bytes);
                             let command = Command::from(command_bytes);
                             let args_string = String::from_utf8(args_bytes.to_vec()).unwrap();
                             let args: Vec<String> =
@@ -167,7 +191,6 @@ impl Decoder for MsgCodec {
                     }
                 }
                 MsgCodecStatus::Discarding => {
-                    println!("discard");
                     let end_offset = buf[self.next_index..buf.len()]
                         .iter()
                         .position(|b| *b == b'$');
