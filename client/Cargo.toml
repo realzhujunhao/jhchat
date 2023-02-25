@@ -6,8 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+models = { path="../models" }
 futures.workspace = true
 tokio = { workspace = true, features = ["full"] }
 tokio-util.workspace = true
+tokio-stream.workspace = true 
 bytes.workspace = true
 iced.workspace = true

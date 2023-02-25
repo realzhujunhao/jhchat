@@ -9,7 +9,7 @@ pub async fn connection() -> Result<TcpListener> {
     let default_config = ServerConfig::default();
     let config = default_config.init().map_err(|_| Error::Config)?;
     let addr = format!("{}:{}", config.ip, config.port);
-    let listener = TcpListener::bind(&addr).await.map_err(|_| Error::Listen)?;
+    let listener = TcpListener::bind(&addr).await.map_err(|_| Error::Listen(config.port))?;
     tracing::info!("server running on {}", addr);
     Ok(listener)
 }

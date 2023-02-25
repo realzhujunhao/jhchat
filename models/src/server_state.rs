@@ -1,6 +1,6 @@
 use crate::{
     command::Command,
-    message::{Content, Message},
+    message::Message,
     error::{Result, Error},
 };
 use std::collections::HashMap;
@@ -27,7 +27,7 @@ impl OnlineUsers {
         let tx = self
             .list
             .get_mut(target)
-            .ok_or(Error::Offline)?;
+            .ok_or(Error::Offline(target.into()))?;
         if msg.args.len() == 0 {
             return Err(Error::InvalidMessage);
         }
@@ -50,7 +50,7 @@ impl OnlineUsers {
     }
 
     pub fn kick(&mut self, name: &str) -> Result<()> {
-        self.list.remove(name).ok_or(Error::Offline)?;
+        self.list.remove(name).ok_or(Error::Offline(name.into()))?;
         Ok(())
     }
 

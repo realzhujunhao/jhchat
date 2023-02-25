@@ -61,6 +61,30 @@ impl Message {
         }
     }
 
+    pub fn send_text(target: &str, content: &str) -> Self {
+        Self {
+            command: Command::SendMsgToUser,
+            args: vec![target.into()],
+            content: Content::Text(content.into()),
+        } 
+    }
+
+    pub fn send_file(target: &str, content: BytesMut) -> Self {
+        Self {
+            command: Command::SendFileToUser,
+            args: vec![target.into()],
+            content: Content::Bytes(content),
+        }
+    }
+
+    pub fn send_image(target: &str, content: BytesMut) -> Self {
+        Self {
+            command: Command::SendImageToUser,
+            args: vec![target.into()],
+            content: Content::Bytes(content),
+        }
+    }
+
     pub fn plain_text(command: Command, text: &str) -> Self {
         Self {
             command,

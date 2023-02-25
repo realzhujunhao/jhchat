@@ -280,7 +280,9 @@ dependencies = [
  "bytes",
  "futures",
  "iced",
+ "models",
  "tokio",
+ "tokio-stream",
  "tokio-util",
 ]
 
@@ -1498,6 +1500,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-util",
+ "tracing",
 ]
 
 [[package]]

@@ -90,15 +90,16 @@ pub fn error(err: Result<()>) {
     match err {
         Ok(()) => (),
         Err(e) => match e {
-            Error::Offline => tracing::info!("attempt to interact with offline user"),
+            Error::Offline(user) => tracing::info!("attempt to interact with offline user {}", user),
             Error::Config => tracing::warn!("failed to read config."),
             Error::ServerToClient => tracing::warn!("lost one pack from server to client."),
             Error::Disconnect => tracing::info!("user disconnect."),
             Error::Channel => tracing::warn!("channel does not work properly."),
-            Error::Listen => tracing::warn!("unable to listen to specified port."),
             Error::Unreachable => tracing::warn!("unexpected logical error."),
             Error::RequestFormat => tracing::info!("receive a request of wrong format."),
             Error::InvalidMessage => tracing::warn!("broken message."),
+            Error::Listen(port) => println!("failed to bind TcpListener to port {}", port),
+            _ => unreachable!(),
         },
     }
 }

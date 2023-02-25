@@ -9,6 +9,7 @@ pub enum Command {
     OnlineList,
     SendMsgToUser,
     SendFileToUser,
+    SendImageToUser,
     Help,
 }
 
@@ -31,6 +32,7 @@ impl Into<BytesMut> for Command {
         match self {
             Self::SendMsgToUser => BytesMut::from("SendMsgToUser"),
             Self::SendFileToUser => BytesMut::from("SendFileToUser"),
+            Self::SendImageToUser => BytesMut::from("SendImageToUser"),
             Self::OnlineList => BytesMut::from("OnlineList"),
             Self::Help => BytesMut::from("Help"),
             Self::Login => BytesMut::from("Login"),
@@ -45,6 +47,7 @@ impl From<BytesMut> for Command {
             b"SendMsgToUser" => Self::SendMsgToUser,
             b"SendFileToUser" => Self::SendFileToUser,
             b"Login" => Self::Login,
+            b"SendImageToUser" => Self::SendImageToUser,
             _ => Self::Help,
         }
     }

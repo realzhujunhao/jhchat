@@ -1,15 +1,18 @@
-use std::fmt::Display;
+use std::{fmt::Display, net::SocketAddr};
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
-    Listen,
+    Listen(String),
     Config,
+    ConnectionFail(SocketAddr),
     Disconnect,
-    Offline,
+    Offline(String),
     RequestFormat,
     Unreachable,
     ServerToClient,
+    ClientToServer,
     InvalidMessage,
     Channel,
 }
@@ -17,15 +20,18 @@ pub enum Error {
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Offline => write!(f, "Offline"),
+            Self::Offline(user) => write!(f, "Offline {}", user),
             Self::Disconnect => write!(f, "Disconnect"),
             Self::RequestFormat => write!(f, "RequestFormat"),
             Self::Unreachable => write!(f, "Unreachable"),
             Self::ServerToClient => write!(f, "ServerToClient"),
             Self::InvalidMessage => write!(f, "InvalidMessage"),
             Self::Channel => write!(f, "Channel"),
-            Self::Listen => write!(f, "Listen"),
+            Self::Listen(port) => write!(f, "Listen {}", port),
             Self::Config => write!(f, "Config"),
+
+            Self::ConnectionFail(addr) => write!(f, "ConnectionFail {:?}", addr),
+            Self::ClientToServer => write!(f, "ClientToServer"),
         }
     }
 }

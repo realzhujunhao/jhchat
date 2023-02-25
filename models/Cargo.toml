@@ -12,3 +12,4 @@ tokio.workspace = true
 tokio-util.workspace = true
 bytes.workspace = true
 futures.workspace = true
+tracing.workspace = true

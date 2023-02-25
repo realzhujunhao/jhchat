@@ -81,5 +81,5 @@ impl Default for ServerConfig {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ClientConfig {
-    todo: i32,
+    pub download_path: String,
 }
