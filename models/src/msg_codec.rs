@@ -89,6 +89,9 @@ fn trim_front(buf: &mut BytesMut) {
     while let Some(b'\r') = buf.first() {
         buf.advance(1);
     }
+    while let Some(b' ') = buf.first() {
+        buf.advance(1);
+    }
 }
 
 impl Encoder<Message> for MsgCodec {
@@ -173,6 +176,7 @@ impl Decoder for MsgCodec {
                                     let text = String::from_utf8(content_bytes.to_vec()).unwrap();
                                     Content::Text(text)
                                 }
+                                // TODO Async write to local file instead of Message struct
                                 Content::Bytes(_) => Content::Bytes(content_bytes),
                             };
                             buf.advance(buf.len());
@@ -184,6 +188,7 @@ impl Decoder for MsgCodec {
                             }));
                         }
                         None => {
+                            // TODO If Content Bytes async write to local file, and advance buf
                             self.next_index = read_to;
                             return Ok(None);
                         }
