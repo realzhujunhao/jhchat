@@ -14,25 +14,20 @@ use tokio_util::codec::{FramedRead, FramedWrite};
 type Reader = FramedRead<OwnedReadHalf, MsgCodec>;
 type Writer = FramedWrite<OwnedWriteHalf, MsgCodec>;
 
+//TODO ADD CONFIG DOWNLOAD PATH
 pub async fn connect(addr: SocketAddr) -> Result<(Reader, Writer)> {
     let stream = TcpStream::connect(addr)
         .await
         .map_err(|_| Error::ConnectionFail(addr))?;
     let (rd, wt) = stream.into_split();
     Ok((
-        FramedRead::new(rd, MsgCodec::new()),
-        FramedWrite::new(wt, MsgCodec::new()),
+        FramedRead::new(rd, MsgCodec::new("TODO")),
+        FramedWrite::new(wt, MsgCodec::new("TODO")),
     ))
 }
 
 pub async fn send_text(writer: &mut Writer, to: &str, content: &str) -> Result<()> {
     let msg = Message::send_text(to, content);
-    writer.send(msg).await.map_err(|_| Error::ClientToServer)?;
-    Ok(())
-}
-
-pub async fn send_file(writer: &mut Writer, to: &str, content: BytesMut) -> Result<()> {
-    let msg = Message::send_file(to, content);
     writer.send(msg).await.map_err(|_| Error::ClientToServer)?;
     Ok(())
 }

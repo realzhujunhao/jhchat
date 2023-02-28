@@ -3,7 +3,7 @@ use bytes::BytesMut;
 
 use crate::message::{Content, Message};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Command {
     Login,
     OnlineList,
@@ -66,7 +66,7 @@ impl Command {
 
     pub fn content(&self) -> Content {
         match self {
-            Self::SendFileToUser => Content::Bytes(BytesMut::default()),
+            Self::SendImageToUser => Content::Bytes(BytesMut::default()),
             _ => Content::Text(String::default()),
         }
     } 

@@ -4,14 +4,23 @@ use models::{
 };
 use tokio::net::TcpListener;
 use tracing_subscriber::{filter::LevelFilter, fmt::format::FmtSpan, EnvFilter};
+use std::fs::create_dir_all;
 
-pub async fn connection() -> Result<TcpListener> {
-    let default_config = ServerConfig::default();
-    let config = default_config.init().map_err(|_| Error::Config)?;
-    let addr = format!("{}:{}", config.ip, config.port);
-    let listener = TcpListener::bind(&addr).await.map_err(|_| Error::Listen(config.port))?;
+pub async fn connection(ip: &str, port: &str) -> Result<TcpListener> {
+    let addr = format!("{}:{}", ip, port);
+    let listener = TcpListener::bind(&addr).await.map_err(|_| Error::Listen(port.into()))?;
     tracing::info!("server running on {}", addr);
     Ok(listener)
+}
+
+pub fn config() -> Result<ServerConfig> {
+    let default_config = ServerConfig::default();
+    let config = default_config.init().map_err(|_| Error::Config)?;
+    Ok(config)
+}
+
+pub fn file_structure(file_dir: &str) {
+    let _ = create_dir_all(file_dir);
 }
 
 pub fn trace() {

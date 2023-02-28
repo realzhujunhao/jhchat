@@ -11,10 +11,11 @@ pub async fn process(
     mut stream: TcpStream,
     addr: SocketAddr,
     online_users: Arc<Mutex<OnlineUsers>>,
+    file_dir: String,
 ) -> Result<()> {
     let (rd, wt) = stream.split();
-    let mut rd_frame = FramedRead::new(rd, MsgCodec::new());
-    let mut wt_frame = FramedWrite::new(wt, MsgCodec::new());
+    let mut rd_frame = FramedRead::new(rd, MsgCodec::new(&file_dir));
+    let mut wt_frame = FramedWrite::new(wt, MsgCodec::new(&file_dir));
     wt_frame
         .send(Message::plain_text(
             Command::Login,

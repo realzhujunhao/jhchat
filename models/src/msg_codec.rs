@@ -1,6 +1,8 @@
-use bytes::{Buf, BytesMut, BufMut};
+use bytes::{Buf, BufMut, BytesMut};
 use std::{cmp, fmt::Display, io, usize};
 use tokio_util::codec::{Decoder, Encoder};
+use sha256::try_digest;
+use std::fs::OpenOptions;
 
 use crate::{
     command::Command,
@@ -43,21 +45,23 @@ pub enum MsgCodecStatus {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct MsgCodec {
-    cmd_index: usize,
-    args_index: usize,
-    max_arg_index: usize,
+    command: Option<Command>,
+    args: Option<Vec<String>>,
+    max_before_delimiter: usize,
     next_index: usize,
     is_discarding: bool,
+    file_path: String,
 }
 
 impl MsgCodec {
-    pub fn new() -> Self {
+    pub fn new(path: &str) -> Self {
         Self {
-            cmd_index: 0,
-            args_index: 0,
+            command: None,
+            args: None,
             next_index: 0,
-            max_arg_index: 256,
+            max_before_delimiter: 256,
             is_discarding: false,
+            file_path: path.into(),
         }
     }
 
@@ -65,18 +69,18 @@ impl MsgCodec {
         if self.is_discarding {
             return MsgCodecStatus::Discarding;
         }
-        if self.cmd_index == 0 {
+        if self.command.is_none() {
             return MsgCodecStatus::Command;
         }
-        if self.args_index == 0 {
+        if self.args.is_none() {
             return MsgCodecStatus::Args;
         }
         MsgCodecStatus::Content
     }
 
     pub fn init(&mut self) {
-        self.cmd_index = 0;
-        self.args_index = 0;
+        self.command = None;
+        self.args = None;
         self.next_index = 0;
         self.is_discarding = false;
     }
@@ -113,12 +117,12 @@ impl Decoder for MsgCodec {
         loop {
             match self.status() {
                 MsgCodecStatus::Command => {
-                    let read_to = cmp::min(self.max_arg_index, buf.len());
+                    let read_to = cmp::min(self.max_before_delimiter, buf.len());
                     let offset = buf[self.next_index..read_to]
                         .iter()
                         .position(|b| *b == b'#');
                     match offset {
-                        None if buf.len() > self.max_arg_index => {
+                        None if buf.len() > self.max_before_delimiter => {
                             self.is_discarding = true;
                             return Err(MsgCodecError::InvalidCommand);
                         }
@@ -127,18 +131,22 @@ impl Decoder for MsgCodec {
                             return Ok(None);
                         }
                         Some(offset_from_next) => {
-                            self.cmd_index = self.next_index + offset_from_next;
-                            self.next_index = self.cmd_index;
+                            let cmd_end_index = self.next_index + offset_from_next;
+                            let mut command_bytes = buf.split_to(cmd_end_index);
+                            trim_front(&mut command_bytes);
+                            self.command = Some(Command::from(command_bytes));
+                            buf.advance(1); // remove command_end_delimiter
+                            self.next_index = 0;
                         }
                     }
                 }
                 MsgCodecStatus::Args => {
-                    let read_to = cmp::min(self.max_arg_index, buf.len());
+                    let read_to = cmp::min(self.max_before_delimiter, buf.len());
                     let offset = buf[self.next_index..read_to]
                         .iter()
                         .position(|b| *b == b'|');
                     match offset {
-                        None if buf.len() > self.max_arg_index => {
+                        None if buf.len() > self.max_before_delimiter => {
                             self.is_discarding = true;
                             return Err(MsgCodecError::InvalidArguments);
                         }
@@ -147,50 +155,66 @@ impl Decoder for MsgCodec {
                             return Ok(None);
                         }
                         Some(offset_from_next) => {
-                            self.args_index = self.next_index + offset_from_next;
-                            self.next_index = self.args_index;
+                            let args_end_index = self.next_index + offset_from_next;
+                            let args_bytes = buf.split_to(args_end_index);
+                            let args_string = String::from_utf8_lossy(&args_bytes).to_string();
+                            self.args =
+                                Some(args_string.split(",").map(|s| String::from(s)).collect());
+                            buf.advance(1); // remove args_end_delimiter
+                            self.next_index = 0;
                         }
                     }
                 }
                 MsgCodecStatus::Content => {
                     let read_to = buf.len();
-                    let end_offset = buf[self.next_index..read_to]
-                        .iter()
-                        .position(|b| *b == b'$');
-                    match end_offset {
-                        Some(offset) => {
-                            let mut command_bytes = buf.split_to(self.cmd_index);
-                            buf.advance(1); // TODO only works for ASCII char
-                            let args_bytes = buf.split_to(self.args_index - self.cmd_index - 1);
-                            buf.advance(1); // TODO only works for ASCII char
-                            let content_bytes =
-                                buf.split_to(self.args_index + offset - self.args_index - 1);
 
-                            trim_front(&mut command_bytes);
-                            let command = Command::from(command_bytes);
-                            let args_string = String::from_utf8(args_bytes.to_vec()).unwrap();
-                            let args: Vec<String> =
-                                args_string.split(",").map(|s| String::from(s)).collect();
-                            let content = match command.content() {
-                                Content::Text(_) => {
-                                    let text = String::from_utf8(content_bytes.to_vec()).unwrap();
-                                    Content::Text(text)
+                    match self.command {
+                        Some(Command::SendFileToUser) => {
+                            let args = self.args.as_ref().ok_or(MsgCodecError::InvalidArguments)?;
+                            let end_offset = buf[self.next_index..read_to].iter().position(|b| *b == b'$');
+                            let file = OpenOptions::new().append(true).create(true).open("").map_err(|e| MsgCodecError::Io(e))?;
+                            match end_offset {
+                                None => {
+                                    
                                 }
-                                // TODO Async write to local file instead of Message struct
-                                Content::Bytes(_) => Content::Bytes(content_bytes),
-                            };
-                            buf.advance(buf.len());
-                            self.init();
-                            return Ok(Some(Message {
-                                command,
-                                args,
-                                content,
-                            }));
+                                Some(offset_from_next) => {
+
+                                }
+                            }
+                            unreachable!()
                         }
-                        None => {
-                            // TODO If Content Bytes async write to local file, and advance buf
-                            self.next_index = read_to;
-                            return Ok(None);
+                        _ => {
+                            let end_offset = buf[self.next_index..read_to]
+                                .iter()
+                                .position(|b| *b == b'$');
+
+                            match end_offset {
+                                None => {
+                                    self.next_index = read_to;
+                                    return Ok(None);
+                                }
+                                Some(offset_from_next) => {
+                                    let command = self.command.as_ref().unwrap().clone();
+                                    let args = self.args.as_ref().unwrap().clone();
+
+                                    let content_end_index = self.next_index + offset_from_next;
+                                    let content_bytes = buf.split_to(content_end_index);
+                                    let content = match command.content() {
+                                        Content::Text(_) => Content::Text(
+                                            String::from_utf8_lossy(&content_bytes).to_string(),
+                                        ),
+                                        Content::Bytes(_) => Content::Bytes(content_bytes),
+                                    };
+
+                                    buf.advance(1); // remove content_end_delimiter
+                                    self.init();
+                                    return Ok(Some(Message {
+                                        command,
+                                        args,
+                                        content,
+                                    }));
+                                }
+                            }
                         }
                     }
                 }

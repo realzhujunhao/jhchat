@@ -62,7 +62,7 @@ impl ServerConfig {
             false => {
                 let content = serde_json::to_string(&self)?;
                 Self::write_string(&content)?;
-                println!("config.json is newly created, please restart the server after configuration.");
+                println!("Warn: config.json is newly created, please restart the server after configuration.");
                 Ok(self)
             }
         }
@@ -74,7 +74,7 @@ impl Default for ServerConfig {
         Self {
             ip: "0.0.0.0".into(),
             port: "2333".into(),
-            file_dir: "/Users/junhaozhu/Downloads".into(),
+            file_dir: "/Users/junhaozhu/Downloads/test".into(),
         }
     }
 }
