@@ -47,6 +47,7 @@ pub async fn process(
                         Command::Help => {
                             handler::help(Arc::clone(&online_users), &username).await
                         }
+                        // TODO accept file
                         _ => handler::help(Arc::clone(&online_users), &username).await
                     },
                     _ => {
