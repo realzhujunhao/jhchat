@@ -1,7 +1,11 @@
 use crate::handler;
 use futures::SinkExt;
+use models::codec::message::Content;
 use models::error::{Error, Result};
-use models::{command::Command, message::Message, msg_codec::MsgCodec, server_state::OnlineUsers};
+use models::{
+    codec::{command::Command, message::Message, msg_codec::MsgCodec},
+    server_state::OnlineUsers,
+};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{net::TcpStream, sync::Mutex};
 use tokio_stream::StreamExt;
@@ -17,10 +21,12 @@ pub async fn process(
     let mut rd_frame = FramedRead::new(rd, MsgCodec::new(&file_dir));
     let mut wt_frame = FramedWrite::new(wt, MsgCodec::new(&file_dir));
     wt_frame
-        .send(Message::plain_text(
-            Command::Login,
-            "please login with username",
-        ))
+        .send(Message {
+            sender: "Server".into(),
+            receiver: "N/A".into(),
+            command: Command::Login,
+            content: Content::Text("login with username\n".into()),
+        })
         .await
         .map_err(|_| Error::Disconnect)?;
     let (username, mut rx) = handler::login(Arc::clone(&online_users), &mut rd_frame, addr).await?;
@@ -33,10 +39,10 @@ pub async fn process(
                             handler::online_list(Arc::clone(&online_users), &username).await
                         }
                         Command::SendMsgToUser => {
-                            handler::send_msg(Arc::clone(&online_users), &username, msg).await
+                            handler::send_from(Arc::clone(&online_users), &username, msg).await
                         }
                         Command::SendFileToUser => {
-                            handler::send_msg(Arc::clone(&online_users), &username, msg).await
+                            handler::send_from(Arc::clone(&online_users), &username, msg).await
                         }
                         Command::Help => {
                             handler::help(Arc::clone(&online_users), &username).await
@@ -45,7 +51,7 @@ pub async fn process(
                     },
                     _ => {
                         tracing::info!("user {} with ip {} has left the server.", username, addr);
-                        handler::error(handler::disconnect(Arc::clone(&online_users), &username).await); 
+                        handler::error(handler::disconnect(Arc::clone(&online_users), &username).await);
                         break;
                     }
                 };

@@ -1,7 +1,7 @@
-use std::str::FromStr;
 use bytes::BytesMut;
+use std::str::FromStr;
 
-use crate::message::{Content, Message};
+use crate::codec::message::{Content, Message, FileData};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Command {
@@ -61,13 +61,13 @@ impl Command {
             "SendMsgToUser#{{username}}|{{msg}}$  ->  send msg to the specified user",
             "SendFileToUser#{{username}}|{{filepath}}$  ->  send file to the specified user"
         );
-        Message::plain_text(Command::Help, &content_text)
+        Message::send_text("Server", "", &content_text)
     }
 
     pub fn content(&self) -> Content {
         match self {
-            Self::SendImageToUser => Content::Bytes(BytesMut::default()),
+            Self::SendImageToUser => Content::File(FileData::default()),
             _ => Content::Text(String::default()),
         }
-    } 
+    }
 }

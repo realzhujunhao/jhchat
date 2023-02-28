@@ -1,9 +1,11 @@
 use futures::SinkExt;
 use models::{
-    command::Command,
+    codec::{
+        command::Command,
+        message::{Content, Message},
+        msg_codec::MsgCodec,
+    },
     error::{Error, Result},
-    message::{Content, Message},
-    msg_codec::MsgCodec,
     server_state::OnlineUsers,
 };
 use std::{net::SocketAddr, sync::Arc};
@@ -14,20 +16,20 @@ use tokio::{
 use tokio_stream::StreamExt;
 use tokio_util::codec::{FramedRead, FramedWrite};
 
-pub async fn help(online_users: Arc<Mutex<OnlineUsers>>, from: &str) -> Result<()> {
+pub async fn help(online_users: Arc<Mutex<OnlineUsers>>, to: &str) -> Result<()> {
     let mut msg = Command::help();
-    msg.args[0] = from.to_string();
-    send_msg(online_users, from, msg).await?;
+    msg.receiver = to.into();
+    send(online_users, msg).await?;
     Ok(())
 }
 
-pub async fn online_list(online_users: Arc<Mutex<OnlineUsers>>, from: &str) -> Result<()> {
+pub async fn online_list(online_users: Arc<Mutex<OnlineUsers>>, to: &str) -> Result<()> {
     let temp = Arc::clone(&online_users);
     let temp = temp.lock().await;
     let mut msg = temp.msg_list();
     drop(temp);
-    msg.args[0] = from.to_string();
-    send_msg(online_users, from, msg).await?;
+    msg.receiver = to.into();
+    send(online_users, msg).await?;
     Ok(())
 }
 
@@ -42,13 +44,19 @@ pub async fn recv_msg(
     Ok(())
 }
 
-pub async fn send_msg(
+pub async fn send(online_users: Arc<Mutex<OnlineUsers>>, msg: Message) -> Result<()> {
+    let mut online_users = online_users.lock().await;
+    online_users.send(msg).await?;
+    Ok(())
+}
+
+pub async fn send_from(
     online_users: Arc<Mutex<OnlineUsers>>,
     from: &str,
-    msg: Message,
+    mut msg: Message,
 ) -> Result<()> {
-    let mut online_users = online_users.lock().await;
-    online_users.send_from(from, msg).await?;
+    msg.sender = from.into();
+    send(online_users, msg).await?;
     Ok(())
 }
 
@@ -90,7 +98,9 @@ pub fn error(err: Result<()>) {
     match err {
         Ok(()) => (),
         Err(e) => match e {
-            Error::Offline(user) => tracing::info!("attempt to interact with offline user {}", user),
+            Error::Offline(user) => {
+                tracing::info!("attempt to interact with offline user {}", user)
+            }
             Error::Config => tracing::warn!("failed to read config."),
             Error::ServerToClient => tracing::warn!("lost one pack from server to client."),
             Error::Disconnect => tracing::info!("user disconnect."),

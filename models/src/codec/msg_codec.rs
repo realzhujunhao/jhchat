@@ -1,40 +1,16 @@
 use bytes::{Buf, BufMut, BytesMut};
-use std::{cmp, fmt::Display, io, usize};
-use tokio_util::codec::{Decoder, Encoder};
+use chrono::prelude::*;
 use sha256::try_digest;
-use std::fs::OpenOptions;
+use std::fs::{create_dir_all, rename, File, OpenOptions};
+use std::io::Write;
+use std::path::Path;
+use std::{cmp, io, usize};
+use tokio_util::codec::{Decoder, Encoder};
 
-use crate::{
+use crate::codec::{
     command::Command,
     message::{Content, Message},
 };
-
-#[derive(Debug)]
-pub enum MsgCodecError {
-    Io(io::Error),
-    InvalidCommand,
-    InvalidArguments,
-    InvalidContent,
-}
-
-impl Display for MsgCodecError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Io(e) => write!(f, "{}", e),
-            Self::InvalidCommand => write!(f, "InvalidCommand"),
-            Self::InvalidArguments => write!(f, "InvalidArgujments"),
-            Self::InvalidContent => write!(f, "InvalidContent"),
-        }
-    }
-}
-
-impl From<io::Error> for MsgCodecError {
-    fn from(e: io::Error) -> Self {
-        Self::Io(e)
-    }
-}
-
-impl std::error::Error for MsgCodecError {}
 
 pub enum MsgCodecStatus {
     Command,
@@ -99,7 +75,7 @@ fn trim_front(buf: &mut BytesMut) {
 }
 
 impl Encoder<Message> for MsgCodec {
-    type Error = MsgCodecError;
+    type Error = io::Error;
 
     fn encode(&mut self, item: Message, dst: &mut BytesMut) -> Result<(), Self::Error> {
         let bytes: BytesMut = item.into();
@@ -111,7 +87,7 @@ impl Encoder<Message> for MsgCodec {
 
 impl Decoder for MsgCodec {
     type Item = Message;
-    type Error = MsgCodecError;
+    type Error = io::Error;
 
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         loop {
@@ -124,7 +100,7 @@ impl Decoder for MsgCodec {
                     match offset {
                         None if buf.len() > self.max_before_delimiter => {
                             self.is_discarding = true;
-                            return Err(MsgCodecError::InvalidCommand);
+                            return Ok(Some(Command::help()));
                         }
                         None => {
                             self.next_index = read_to;
@@ -148,7 +124,7 @@ impl Decoder for MsgCodec {
                     match offset {
                         None if buf.len() > self.max_before_delimiter => {
                             self.is_discarding = true;
-                            return Err(MsgCodecError::InvalidArguments);
+                            return Ok(Some(Command::help()));
                         }
                         None => {
                             self.next_index = read_to;
@@ -158,8 +134,24 @@ impl Decoder for MsgCodec {
                             let args_end_index = self.next_index + offset_from_next;
                             let args_bytes = buf.split_to(args_end_index);
                             let args_string = String::from_utf8_lossy(&args_bytes).to_string();
-                            self.args =
-                                Some(args_string.split(",").map(|s| String::from(s)).collect());
+                            let mut args_vec: Vec<String> =
+                                args_string.split(",").map(|s| String::from(s)).collect();
+                            if args_vec.len() != 3 {
+                                return Ok(Some(Command::help()));
+                            }
+
+                            if Some(Command::SendFileToUser) == self.command {
+                                let dir_path =
+                                    format!("{}/{}-{}", self.file_path, &args_vec[0], &args_vec[1]);
+                                create_dir_all(&dir_path)?;
+                                let time = Utc::now().format("%Y-%m-%d_%H:%M:%S").to_string();
+                                let file_path = format!("{}/{}", dir_path, time);
+                                File::create(&file_path)?;
+                                args_vec.push(file_path);
+                                args_vec.push(dir_path);
+                            }
+
+                            self.args = Some(args_vec);
                             buf.advance(1); // remove args_end_delimiter
                             self.next_index = 0;
                         }
@@ -170,18 +162,43 @@ impl Decoder for MsgCodec {
 
                     match self.command {
                         Some(Command::SendFileToUser) => {
-                            let args = self.args.as_ref().ok_or(MsgCodecError::InvalidArguments)?;
-                            let end_offset = buf[self.next_index..read_to].iter().position(|b| *b == b'$');
-                            let file = OpenOptions::new().append(true).create(true).open("").map_err(|e| MsgCodecError::Io(e))?;
+                            //INFALLIBLE
+                            let args = self.args.as_ref().unwrap();
+                            if args.len() != 5 {
+                                return Ok(Some(Command::help()));
+                            }
+                            let file_path = &args[3];
+                            let dir_path = &args[4];
+                            let mut file = OpenOptions::new().append(true).open(file_path)?;
+
+                            let end_offset = buf[self.next_index..read_to]
+                                .iter()
+                                .position(|b| *b == b'$');
                             match end_offset {
                                 None => {
-                                    
+                                    let written = buf.split_to(read_to);
+                                    file.write_all(&written)?;
+                                    self.next_index = 0;
+                                    return Ok(None);
                                 }
                                 Some(offset_from_next) => {
-
+                                    let written = buf.split_to(offset_from_next);
+                                    file.write_all(&written)?;
+                                    drop(file);
+                                    let key = try_digest(Path::new(file_path))?;
+                                    rename(file_path, format!("{}/{}", dir_path, key))?;
+                                    let sender = args[0].clone();
+                                    let receiver = args[1].clone();
+                                    let filename = args[2].clone();
+                                    self.init();
+                                    return Ok(Some(Message::send_file(
+                                        &sender,
+                                        &receiver,
+                                        &filename,
+                                        BytesMut::from(key.as_bytes()),
+                                    )));
                                 }
                             }
-                            unreachable!()
                         }
                         _ => {
                             let end_offset = buf[self.next_index..read_to]
@@ -194,6 +211,7 @@ impl Decoder for MsgCodec {
                                     return Ok(None);
                                 }
                                 Some(offset_from_next) => {
+                                    // INFALLIBLE
                                     let command = self.command.as_ref().unwrap().clone();
                                     let args = self.args.as_ref().unwrap().clone();
 
@@ -203,14 +221,15 @@ impl Decoder for MsgCodec {
                                         Content::Text(_) => Content::Text(
                                             String::from_utf8_lossy(&content_bytes).to_string(),
                                         ),
-                                        Content::Bytes(_) => Content::Bytes(content_bytes),
+                                        Content::File(_) => Content::file(&args[2], content_bytes),
                                     };
 
                                     buf.advance(1); // remove content_end_delimiter
                                     self.init();
                                     return Ok(Some(Message {
+                                        sender: args[0].clone(),
+                                        receiver: args[1].clone(),
                                         command,
-                                        args,
                                         content,
                                     }));
                                 }
