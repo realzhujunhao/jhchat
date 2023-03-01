@@ -78,7 +78,7 @@ impl Message {
         Self {
             sender: from.into(),
             receiver: to.into(),
-            command: Command::SendMsgToUser,
+            command: Command::SendMsg,
             content: Content::Text(content.into()),
         }
     }
@@ -87,7 +87,7 @@ impl Message {
         Self {
             sender: from.into(),
             receiver: to.into(),
-            command: Command::SendFileToUser,
+            command: Command::SendBytes,
             content: Content::file(filename, content),
         }
     }
@@ -96,7 +96,7 @@ impl Message {
         Self {
             sender: from.into(),
             receiver: to.into(),
-            command: Command::SendImageToUser,
+            command: Command::SendImage,
             content: Content::file(filename, content),
         }
     }

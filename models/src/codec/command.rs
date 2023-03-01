@@ -1,58 +1,30 @@
 use bytes::BytesMut;
+use strum::{IntoStaticStr, EnumString};
 use std::str::FromStr;
 
 use crate::codec::message::{Content, Message, FileData};
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, IntoStaticStr, EnumString)]
 pub enum Command {
+    Help,
     Login,
     OnlineList,
-    SendMsgToUser,
-    SendFileToUser,
-    SendImageToUser,
-    AcceptFile,
-    Help,
+    SendMsg,
+    SendImage,
+    SendBytes,
+    FileKey,
 }
 
-impl FromStr for Command {
-    type Err = ();
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "OnlineList" => Ok(Self::OnlineList),
-            "SendMsgToUser" => Ok(Self::SendMsgToUser),
-            "SendFileToUser" => Ok(Self::SendMsgToUser),
-            "Login" => Ok(Self::Login),
-            "Help" => Ok(Self::Help),
-            _ => Err(()),
-        }
-    }
-}
 
 impl Into<BytesMut> for Command {
     fn into(self) -> BytesMut {
-        match self {
-            Self::SendMsgToUser => BytesMut::from("SendMsgToUser"),
-            Self::SendFileToUser => BytesMut::from("SendFileToUser"),
-            Self::SendImageToUser => BytesMut::from("SendImageToUser"),
-            Self::OnlineList => BytesMut::from("OnlineList"),
-            Self::Help => BytesMut::from("Help"),
-            Self::Login => BytesMut::from("Login"),
-            Self::AcceptFile => BytesMut::from("AcceptFile"),
-        }
+        BytesMut::from(Into::<&str>::into(self))
     }
 }
 
 impl From<BytesMut> for Command {
     fn from(value: BytesMut) -> Self {
-        match value.as_ref() {
-            b"OnlineList" => Self::OnlineList,
-            b"SendMsgToUser" => Self::SendMsgToUser,
-            b"SendFileToUser" => Self::SendFileToUser,
-            b"Login" => Self::Login,
-            b"SendImageToUser" => Self::SendImageToUser,
-            b"AcceptFile" => Self::AcceptFile,
-            _ => Self::Help,
-        }
+        Self::from_str(&String::from_utf8_lossy(&value).to_string()).unwrap_or(Self::Help)
     }
 }
 
@@ -70,7 +42,8 @@ impl Command {
 
     pub fn content(&self) -> Content {
         match self {
-            Self::SendImageToUser => Content::File(FileData::default()),
+            Self::SendImage => Content::File(FileData::default()),
+            Self::SendBytes => Content::File(FileData::default()),
             _ => Content::Text(String::default()),
         }
     }

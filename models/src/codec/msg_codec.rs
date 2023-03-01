@@ -19,8 +19,15 @@ pub enum MsgCodecStatus {
     Discarding,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Hash)]
+pub enum CodecRole {
+    Server,
+    Client,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct MsgCodec {
+    role: CodecRole,
     command: Option<Command>,
     args: Option<Vec<String>>,
     max_before_delimiter: usize,
@@ -30,8 +37,9 @@ pub struct MsgCodec {
 }
 
 impl MsgCodec {
-    pub fn new(path: &str) -> Self {
+    pub fn new(role: CodecRole, path: &str) -> Self {
         Self {
+            role,
             command: None,
             args: None,
             next_index: 0,
@@ -86,6 +94,54 @@ impl Encoder<Message> for MsgCodec {
     }
 }
 
+fn read_offset_limited(codec: &mut MsgCodec, buf: &mut BytesMut, delimiter: u8) -> Result<Option<usize>, ()> {
+    let read_to = cmp::min(codec.max_before_delimiter, buf.len());
+    let offset = buf[codec.next_index..read_to].iter().position(|b| *b == delimiter);
+    match offset {
+        None if buf.len() > codec.max_before_delimiter => {
+            codec.is_discarding = true;
+            return Err(());
+        }
+        None => {
+            codec.next_index = read_to;
+            return Ok(None);
+        }
+        Some(offset_from_next) => return Ok(Some(offset_from_next)),
+    } 
+}
+
+fn read_command(codec: &mut MsgCodec, buf: &mut BytesMut) -> Result<Option<Command>, ()> {
+    match read_offset_limited(codec, buf, b'#')? {
+        None => Ok(None),
+        Some(offset_from_next) => {
+            let cmd_end_index = codec.next_index + offset_from_next;
+            let mut command_bytes = buf.split_to(cmd_end_index);
+            trim_front(&mut command_bytes);
+            buf.advance(1);
+            codec.next_index = 0;
+            Ok(Some(Command::from(command_bytes)))
+        }
+    }
+}
+
+fn read_args(codec: &mut MsgCodec, buf: &mut BytesMut) -> Result<Option<Vec<String>>, ()> {
+    match read_offset_limited(codec, buf, b'|')? {
+        None => Ok(None),
+        Some(offset_from_next) => {
+            let args_end_index = codec.next_index + offset_from_next;
+            let args_bytes = buf.split_to(args_end_index);
+            let args_string = String::from_utf8_lossy(&args_bytes).to_string();
+            let args_vec: Vec<String> = args_string.split(",").map(|s| s.into()).collect();
+            if args_vec.len() != 3 {
+                return Err(());
+            }
+            buf.advance(1);
+            codec.next_index = 0;
+            Ok(Some(args_vec))
+        }
+    }
+}
+
 impl Decoder for MsgCodec {
     type Item = Message;
     type Error = io::Error;
@@ -94,54 +150,18 @@ impl Decoder for MsgCodec {
         loop {
             match self.status() {
                 MsgCodecStatus::Command => {
-                    let read_to = cmp::min(self.max_before_delimiter, buf.len());
-                    let offset = buf[self.next_index..read_to]
-                        .iter()
-                        .position(|b| *b == b'#');
-                    match offset {
-                        None if buf.len() > self.max_before_delimiter => {
-                            self.is_discarding = true;
-                            return Ok(Some(Command::help()));
-                        }
-                        None => {
-                            self.next_index = read_to;
-                            return Ok(None);
-                        }
-                        Some(offset_from_next) => {
-                            let cmd_end_index = self.next_index + offset_from_next;
-                            let mut command_bytes = buf.split_to(cmd_end_index);
-                            trim_front(&mut command_bytes);
-                            self.command = Some(Command::from(command_bytes));
-                            buf.advance(1); // remove command_end_delimiter
-                            self.next_index = 0;
-                        }
+                    match read_command(self, buf) {
+                        Err(_) => return Ok(Some(Command::help())),
+                        Ok(None) => return Ok(None),
+                        Ok(Some(cmd)) => self.command = Some(cmd),
                     }
                 }
                 MsgCodecStatus::Args => {
-                    let read_to = cmp::min(self.max_before_delimiter, buf.len());
-                    let offset = buf[self.next_index..read_to]
-                        .iter()
-                        .position(|b| *b == b'|');
-                    match offset {
-                        None if buf.len() > self.max_before_delimiter => {
-                            self.is_discarding = true;
-                            return Ok(Some(Command::help()));
-                        }
-                        None => {
-                            self.next_index = read_to;
-                            return Ok(None);
-                        }
-                        Some(offset_from_next) => {
-                            let args_end_index = self.next_index + offset_from_next;
-                            let args_bytes = buf.split_to(args_end_index);
-                            let args_string = String::from_utf8_lossy(&args_bytes).to_string();
-                            let mut args_vec: Vec<String> =
-                                args_string.split(",").map(|s| String::from(s)).collect();
-                            if args_vec.len() != 3 {
-                                return Ok(Some(Command::help()));
-                            }
-
-                            if Some(Command::SendFileToUser) == self.command {
+                    match read_args(self, buf) {
+                        Err(_) => return Ok(Some(Command::help())),
+                        Ok(None) => return Ok(None),
+                        Ok(Some(mut args_vec)) => {
+                            if Some(Command::SendBytes) == self.command {
                                 let dir_path =
                                     format!("{}/{}", self.file_path, &args_vec[1]);
                                 create_dir_all(&dir_path)?;
@@ -151,10 +171,7 @@ impl Decoder for MsgCodec {
                                 args_vec.push(file_path);
                                 args_vec.push(dir_path);
                             }
-
                             self.args = Some(args_vec);
-                            buf.advance(1); // remove args_end_delimiter
-                            self.next_index = 0;
                         }
                     }
                 }
@@ -162,7 +179,7 @@ impl Decoder for MsgCodec {
                     let read_to = buf.len();
 
                     match self.command {
-                        Some(Command::SendFileToUser) => {
+                        Some(Command::SendBytes) => {
                             //INFALLIBLE
                             let args = self.args.as_ref().unwrap();
                             if args.len() != 5 {

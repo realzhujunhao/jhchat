@@ -3,7 +3,11 @@ use futures::SinkExt;
 use models::codec::message::Content;
 use models::error::{Error, Result};
 use models::{
-    codec::{command::Command, message::Message, msg_codec::MsgCodec},
+    codec::{
+        command::Command,
+        message::Message,
+        msg_codec::{CodecRole, MsgCodec},
+    },
     server_state::OnlineUsers,
 };
 use std::{net::SocketAddr, sync::Arc};
@@ -18,8 +22,8 @@ pub async fn process(
     file_dir: String,
 ) -> Result<()> {
     let (rd, wt) = stream.split();
-    let mut rd_frame = FramedRead::new(rd, MsgCodec::new(&file_dir));
-    let mut wt_frame = FramedWrite::new(wt, MsgCodec::new(&file_dir));
+    let mut rd_frame = FramedRead::new(rd, MsgCodec::new(CodecRole::Server, &file_dir));
+    let mut wt_frame = FramedWrite::new(wt, MsgCodec::new(CodecRole::Server, &file_dir));
     wt_frame
         .send(Message {
             sender: "Server".into(),
@@ -38,10 +42,10 @@ pub async fn process(
                         Command::OnlineList => {
                             handler::online_list(Arc::clone(&online_users), &username).await
                         }
-                        Command::SendMsgToUser => {
+                        Command::SendMsg => {
                             handler::send_from(Arc::clone(&online_users), &username, msg).await
                         }
-                        Command::SendFileToUser => {
+                        Command::SendBytes => {
                             handler::send_from(Arc::clone(&online_users), &username, msg).await
                         }
                         Command::Help => {

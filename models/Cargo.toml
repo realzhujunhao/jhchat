@@ -15,3 +15,4 @@ futures.workspace = true
 tracing.workspace = true
 sha256.workspace = true
 chrono = { workspace = true, features = ["unstable-locales"] }
+strum = { workspace = true, features = ["derive"] }
