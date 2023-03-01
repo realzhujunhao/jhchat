@@ -10,6 +10,7 @@ pub enum Command {
     SendMsgToUser,
     SendFileToUser,
     SendImageToUser,
+    AcceptFile,
     Help,
 }
 
@@ -36,6 +37,7 @@ impl Into<BytesMut> for Command {
             Self::OnlineList => BytesMut::from("OnlineList"),
             Self::Help => BytesMut::from("Help"),
             Self::Login => BytesMut::from("Login"),
+            Self::AcceptFile => BytesMut::from("AcceptFile"),
         }
     }
 }
@@ -48,6 +50,7 @@ impl From<BytesMut> for Command {
             b"SendFileToUser" => Self::SendFileToUser,
             b"Login" => Self::Login,
             b"SendImageToUser" => Self::SendImageToUser,
+            b"AcceptFile" => Self::AcceptFile,
             _ => Self::Help,
         }
     }
@@ -56,10 +59,11 @@ impl From<BytesMut> for Command {
 impl Command {
     pub fn help() -> Message {
         let content_text = format!(
-            "\n{}\n{}\n{}\n",
-            "OnlineList#|$  ->  Request name list of online users",
-            "SendMsgToUser#{{username}}|{{msg}}$  ->  send msg to the specified user",
-            "SendFileToUser#{{username}}|{{filepath}}$  ->  send file to the specified user"
+            "\n{}\n{}\n{}\n{}\n",
+            r"OnlineList#,,|$  ->  Request name list of online users",
+            r"SendMsgToUser#,{receiver},|{msg}$  ->  send msg to the specified user",
+            r"SendFileToUser#,{receiver},{filename}|{bytes}$  ->  send file to the specified user",
+            r"AcceptFile#,{receiver},|{key}$  ->  accept file",
         );
         Message::send_text("Server", "", &content_text)
     }

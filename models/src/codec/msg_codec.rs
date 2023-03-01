@@ -74,6 +74,7 @@ fn trim_front(buf: &mut BytesMut) {
     }
 }
 
+//TODO
 impl Encoder<Message> for MsgCodec {
     type Error = io::Error;
 
@@ -142,7 +143,7 @@ impl Decoder for MsgCodec {
 
                             if Some(Command::SendFileToUser) == self.command {
                                 let dir_path =
-                                    format!("{}/{}-{}", self.file_path, &args_vec[0], &args_vec[1]);
+                                    format!("{}/{}", self.file_path, &args_vec[1]);
                                 create_dir_all(&dir_path)?;
                                 let time = Utc::now().format("%Y-%m-%d_%H:%M:%S").to_string();
                                 let file_path = format!("{}/{}", dir_path, time);
