@@ -25,7 +25,7 @@ impl OnlineUsers {
         list.keys().for_each(|key| {
             list_vec.push(key.into());
         });
-        Message::send_text("", &list_vec.join(","))
+        Message::online_list(&list_vec.join(","))
     }
 
     pub async fn add_user(&self, name: &str, tx: Tx) {

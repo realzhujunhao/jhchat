@@ -101,6 +101,15 @@ impl Message {
         }
     }
 
+    pub fn online_list(content: &str) -> Self {
+        Self {
+            sender: "".into(),
+            receiver: "".into(),
+            command: Command::OnlineList,
+            content: Content::Text(content.into()),
+        }
+    }
+
     pub fn file_key(to: &str, filename: &str, key: &str) -> Self {
         Self {
             sender: "".into(),
