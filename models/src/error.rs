@@ -15,6 +15,7 @@ pub enum Error {
     ClientToServer,
     InvalidMessage,
     Channel,
+    RwLock,
 }
 
 impl Display for Error {
@@ -27,6 +28,7 @@ impl Display for Error {
             Self::ServerToClient => write!(f, "ServerToClient"),
             Self::InvalidMessage => write!(f, "InvalidMessage"),
             Self::Channel => write!(f, "Channel"),
+            Self::RwLock => write!(f, "RwLock"),
             Self::Listen(port) => write!(f, "Listen {}", port),
             Self::Config => write!(f, "Config"),
 

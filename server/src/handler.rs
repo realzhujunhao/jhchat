@@ -1,4 +1,3 @@
-use futures::SinkExt;
 use models::{
     codec::{
         command::Command,
@@ -10,61 +9,16 @@ use models::{
 };
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{
-    net::tcp::{ReadHalf, WriteHalf},
-    sync::{mpsc, Mutex},
+    net::tcp::ReadHalf,
+    sync::mpsc,
 };
 use tokio_stream::StreamExt;
-use tokio_util::codec::{FramedRead, FramedWrite};
+use tokio_util::codec::FramedRead;
 
-pub async fn help(online_users: Arc<Mutex<OnlineUsers>>, to: &str) -> Result<()> {
-    let mut msg = Command::help();
-    msg.receiver = to.into();
-    send(online_users, msg).await?;
-    Ok(())
-}
-
-pub async fn online_list(online_users: Arc<Mutex<OnlineUsers>>, to: &str) -> Result<()> {
-    let temp = Arc::clone(&online_users);
-    let temp = temp.lock().await;
-    let mut msg = temp.msg_list();
-    drop(temp);
-    msg.receiver = to.into();
-    send(online_users, msg).await?;
-    Ok(())
-}
-
-pub async fn recv_msg(
-    msg: Message,
-    wt_frame: &mut FramedWrite<WriteHalf<'_>, MsgCodec>,
-) -> Result<()> {
-    wt_frame
-        .send(msg)
-        .await
-        .map_err(|_| Error::ServerToClient)?;
-    Ok(())
-}
-
-pub async fn send(online_users: Arc<Mutex<OnlineUsers>>, msg: Message) -> Result<()> {
-    let mut online_users = online_users.lock().await;
-    online_users.send(msg).await?;
-    Ok(())
-}
-
-pub async fn send_from(
-    online_users: Arc<Mutex<OnlineUsers>>,
-    from: &str,
-    mut msg: Message,
-) -> Result<()> {
-    msg.sender = from.into();
-    send(online_users, msg).await?;
-    Ok(())
-}
-
-type Tx = mpsc::Sender<Message>;
 type Rx = mpsc::Receiver<Message>;
 
 pub async fn login(
-    online_users: Arc<Mutex<OnlineUsers>>,
+    online_users: Arc<OnlineUsers>,
     rd_frame: &mut FramedRead<ReadHalf<'_>, MsgCodec>,
     addr: SocketAddr,
 ) -> Result<(String, Rx)> {
@@ -73,7 +27,7 @@ pub async fn login(
             Command::Login => {
                 if let Content::Text(name) = msg.content {
                     let (tx, rx) = mpsc::channel(128);
-                    push_user(online_users, name.clone(), tx).await;
+                    online_users.add_user(&name, tx).await;
                     tracing::info!("{} has joined server.", name);
                     Ok((name, rx))
                 } else {
@@ -86,12 +40,6 @@ pub async fn login(
         tracing::error!("Failed to get username from {}. Client disconnected.", addr);
         Err(Error::Disconnect)
     }
-}
-
-pub async fn disconnect(online_users: Arc<Mutex<OnlineUsers>>, name: &str) -> Result<()> {
-    let mut online_users = online_users.lock().await;
-    online_users.kick(name)?;
-    Ok(())
 }
 
 pub fn error(err: Result<()>) {
@@ -109,12 +57,9 @@ pub fn error(err: Result<()>) {
             Error::RequestFormat => tracing::info!("receive a request of wrong format."),
             Error::InvalidMessage => tracing::warn!("broken message."),
             Error::Listen(port) => println!("failed to bind TcpListener to port {}", port),
-            _ => unreachable!(),
+            Error::RwLock => tracing::warn!("Read Write Lock Error, online_user might not be secure"),
+            _ => unreachable!()
         },
     }
 }
 
-async fn push_user(online_users: Arc<Mutex<OnlineUsers>>, username: String, tx: Tx) {
-    let mut online_users = online_users.lock().await;
-    online_users.list.insert(username.clone(), tx);
-}

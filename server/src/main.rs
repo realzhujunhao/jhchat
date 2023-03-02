@@ -4,7 +4,6 @@ mod handler;
 use std::{error::Error, sync::Arc, env};
 
 use process::process;
-use tokio::sync::Mutex;
 use models::server_state::OnlineUsers;
 
 #[tokio::main]
@@ -14,7 +13,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let config = init::config()?;
     init::file_structure(&config.file_dir);
-    let online_users = Arc::new(Mutex::new(OnlineUsers::new()));
+    let online_users = Arc::new(OnlineUsers::new());
     let listener = init::connection(&config.ip, &config.port).await?;
 
     loop {

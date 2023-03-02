@@ -32,12 +32,12 @@ impl Command {
     pub fn help() -> Message {
         let content_text = format!(
             "\n{}\n{}\n{}\n{}\n",
-            r"OnlineList#,,|$  ->  Request name list of online users",
-            r"SendMsgToUser#,{receiver},|{msg}$  ->  send msg to the specified user",
-            r"SendFileToUser#,{receiver},{filename}|{bytes}$  ->  send file to the specified user",
+            r"OnlineList#0,,|$  ->  Request name list of online users",
+            r"SendMsgToUser#{length},{receiver},|{msg}$  ->  send msg to the specified user",
+            r"SendFileToUser#{length},{receiver},{filename}|{bytes}$  ->  send file to the specified user",
             r"AcceptFile#,{receiver},|{key}$  ->  accept file",
         );
-        Message::send_text("Server", "", &content_text)
+        Message::send_text("", &content_text).set_sender("Server")
     }
 
     pub fn content(&self) -> Content {

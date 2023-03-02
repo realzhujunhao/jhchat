@@ -1,9 +1,8 @@
 use bytes::{Buf, BufMut, BytesMut};
 use chrono::prelude::*;
-use sha256::try_digest;
-use std::fs::{create_dir_all, rename, File, OpenOptions};
+use sha256::digest;
+use std::fs::{create_dir_all, File, OpenOptions};
 use std::io::Write;
-use std::path::Path;
 use std::{cmp, io, usize};
 use tokio_util::codec::{Decoder, Encoder};
 
@@ -12,6 +11,7 @@ use crate::codec::{
     message::{Content, Message},
 };
 
+#[derive(Debug)]
 pub enum MsgCodecStatus {
     Command,
     Args,
@@ -29,11 +29,13 @@ pub enum CodecRole {
 pub struct MsgCodec {
     role: CodecRole,
     command: Option<Command>,
+    // [content-length, receiver, (filename), (file_path), (key)]
     args: Option<Vec<String>>,
+    content_remain: usize,
     max_before_delimiter: usize,
     next_index: usize,
     is_discarding: bool,
-    file_path: String,
+    download_path: String,
 }
 
 impl MsgCodec {
@@ -43,9 +45,10 @@ impl MsgCodec {
             command: None,
             args: None,
             next_index: 0,
+            content_remain: 0,
             max_before_delimiter: 256,
             is_discarding: false,
-            file_path: path.into(),
+            download_path: path.into(),
         }
     }
 
@@ -66,6 +69,7 @@ impl MsgCodec {
         self.command = None;
         self.args = None;
         self.next_index = 0;
+        self.content_remain = 0;
         self.is_discarding = false;
     }
 }
@@ -94,9 +98,15 @@ impl Encoder<Message> for MsgCodec {
     }
 }
 
-fn read_offset_limited(codec: &mut MsgCodec, buf: &mut BytesMut, delimiter: u8) -> Result<Option<usize>, ()> {
+fn read_offset_limited(
+    codec: &mut MsgCodec,
+    buf: &mut BytesMut,
+    delimiter: u8,
+) -> Result<Option<usize>, ()> {
     let read_to = cmp::min(codec.max_before_delimiter, buf.len());
-    let offset = buf[codec.next_index..read_to].iter().position(|b| *b == delimiter);
+    let offset = buf[codec.next_index..read_to]
+        .iter()
+        .position(|b| *b == delimiter);
     match offset {
         None if buf.len() > codec.max_before_delimiter => {
             codec.is_discarding = true;
@@ -107,7 +117,7 @@ fn read_offset_limited(codec: &mut MsgCodec, buf: &mut BytesMut, delimiter: u8) 
             return Ok(None);
         }
         Some(offset_from_next) => return Ok(Some(offset_from_next)),
-    } 
+    }
 }
 
 fn read_command(codec: &mut MsgCodec, buf: &mut BytesMut) -> Result<Option<Command>, ()> {
@@ -137,9 +147,35 @@ fn read_args(codec: &mut MsgCodec, buf: &mut BytesMut) -> Result<Option<Vec<Stri
             }
             buf.advance(1);
             codec.next_index = 0;
+            codec.content_remain = args_vec[0].parse().map_err(|_| ())?;
             Ok(Some(args_vec))
         }
     }
+}
+
+fn init_file(dir_path: &str, file_name: &str) -> io::Result<(String, String)> {
+    create_dir_all(dir_path)?;
+    let time = Utc::now().format("%Y-%m-%d_%H:%M:%S").to_string();
+    let raw = format!("{}{}", time, file_name);
+    let key = digest(raw);
+    let file_path = format!("{}/{}", dir_path, key);
+    File::create(&file_path)?;
+    Ok((file_path, key))
+}
+
+fn handle_remain(codec: &mut MsgCodec, buf: &mut BytesMut) -> Result<Option<()>, ()> {
+    if codec.content_remain != 0 {
+        return Ok(None);
+    }
+    if buf.len() == 0 {
+        return Ok(None);
+    }
+    if *buf.first().unwrap() != b'$' {
+        codec.is_discarding = true;
+        return Err(());
+    }
+    buf.advance(1);
+    Ok(Some(()))
 }
 
 impl Decoder for MsgCodec {
@@ -149,103 +185,69 @@ impl Decoder for MsgCodec {
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         loop {
             match self.status() {
-                MsgCodecStatus::Command => {
-                    match read_command(self, buf) {
-                        Err(_) => return Ok(Some(Command::help())),
-                        Ok(None) => return Ok(None),
-                        Ok(Some(cmd)) => self.command = Some(cmd),
+                MsgCodecStatus::Command => match read_command(self, buf) {
+                    Err(_) => return Ok(Some(Command::help())),
+                    Ok(None) => return Ok(None),
+                    Ok(Some(cmd)) => {
+                        self.command = Some(cmd);
                     }
-                }
-                MsgCodecStatus::Args => {
-                    match read_args(self, buf) {
-                        Err(_) => return Ok(Some(Command::help())),
-                        Ok(None) => return Ok(None),
-                        Ok(Some(mut args_vec)) => {
-                            if Some(Command::SendBytes) == self.command {
-                                let dir_path =
-                                    format!("{}/{}", self.file_path, &args_vec[1]);
-                                create_dir_all(&dir_path)?;
-                                let time = Utc::now().format("%Y-%m-%d_%H:%M:%S").to_string();
-                                let file_path = format!("{}/{}", dir_path, time);
-                                File::create(&file_path)?;
-                                args_vec.push(file_path);
-                                args_vec.push(dir_path);
-                            }
-                            self.args = Some(args_vec);
+                },
+                MsgCodecStatus::Args => match read_args(self, buf) {
+                    Err(_) => return Ok(Some(Command::help())),
+                    Ok(None) => return Ok(None),
+                    Ok(Some(mut args_vec)) => {
+                        if Some(Command::SendBytes) == self.command {
+                            let dir_path = format!("{}/{}", self.download_path, &args_vec[1]);
+                            let (file_path, key) = init_file(&dir_path, &args_vec[2])?;
+                            args_vec.push(file_path);
+                            args_vec.push(key);
                         }
+                        self.args = Some(args_vec);
                     }
-                }
+                },
                 MsgCodecStatus::Content => {
-                    let read_to = buf.len();
+                    let args = self.args.as_ref().unwrap().clone();
 
                     match self.command {
                         Some(Command::SendBytes) => {
-                            //INFALLIBLE
-                            let args = self.args.as_ref().unwrap();
-                            if args.len() != 5 {
-                                return Ok(Some(Command::help()));
-                            }
                             let file_path = &args[3];
-                            let dir_path = &args[4];
                             let mut file = OpenOptions::new().append(true).open(file_path)?;
-
-                            let end_offset = buf[self.next_index..read_to]
-                                .iter()
-                                .position(|b| *b == b'$');
-                            match end_offset {
-                                None => {
-                                    let written = buf.split_to(read_to);
-                                    file.write_all(&written)?;
-                                    self.next_index = 0;
-                                    return Ok(None);
-                                }
-                                Some(offset_from_next) => {
-                                    let written = buf.split_to(offset_from_next);
-                                    file.write_all(&written)?;
-                                    drop(file);
-                                    let key = try_digest(Path::new(file_path))?;
-                                    rename(file_path, format!("{}/{}", dir_path, key))?;
-                                    let sender = args[0].clone();
+                            let read_to = cmp::min(buf.len(), self.content_remain);
+                            let content_bytes = buf.split_to(read_to);
+                            self.content_remain -= read_to;
+                            file.write_all(&content_bytes)?;
+                            match handle_remain(self, buf) {
+                                Err(_) => return Ok(Some(Command::help())),
+                                Ok(None) => return Ok(None),
+                                Ok(Some(_)) => {
                                     let receiver = args[1].clone();
                                     let filename = args[2].clone();
+                                    let key = args[4].clone();
                                     self.init();
-                                    return Ok(Some(Message::send_file(
-                                        &sender,
-                                        &receiver,
-                                        &filename,
-                                        BytesMut::from(key.as_bytes()),
-                                    )));
+                                    return Ok(Some(Message::file_key(&receiver, &filename, &key)));
                                 }
                             }
                         }
                         _ => {
-                            let end_offset = buf[self.next_index..read_to]
-                                .iter()
-                                .position(|b| *b == b'$');
-
-                            match end_offset {
-                                None => {
-                                    self.next_index = read_to;
-                                    return Ok(None);
-                                }
-                                Some(offset_from_next) => {
-                                    // INFALLIBLE
+                            if buf.len() <= self.content_remain {
+                                return Ok(None);
+                            }
+                            let content_bytes = buf.split_to(self.content_remain);
+                            self.content_remain = 0;
+                            match handle_remain(self, buf) {
+                                Err(_) => return Ok(Some(Command::help())),
+                                Ok(None) => return Ok(None),
+                                Ok(Some(_)) => {
                                     let command = self.command.as_ref().unwrap().clone();
-                                    let args = self.args.as_ref().unwrap().clone();
-
-                                    let content_end_index = self.next_index + offset_from_next;
-                                    let content_bytes = buf.split_to(content_end_index);
                                     let content = match command.content() {
                                         Content::Text(_) => Content::Text(
                                             String::from_utf8_lossy(&content_bytes).to_string(),
                                         ),
                                         Content::File(_) => Content::file(&args[2], content_bytes),
                                     };
-
-                                    buf.advance(1); // remove content_end_delimiter
                                     self.init();
                                     return Ok(Some(Message {
-                                        sender: args[0].clone(),
+                                        sender: "".into(),
                                         receiver: args[1].clone(),
                                         command,
                                         content,

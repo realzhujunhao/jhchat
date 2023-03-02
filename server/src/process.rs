@@ -11,14 +11,14 @@ use models::{
     server_state::OnlineUsers,
 };
 use std::{net::SocketAddr, sync::Arc};
-use tokio::{net::TcpStream, sync::Mutex};
+use tokio::net::TcpStream;
 use tokio_stream::StreamExt;
 use tokio_util::codec::{FramedRead, FramedWrite};
 
 pub async fn process(
     mut stream: TcpStream,
     addr: SocketAddr,
-    online_users: Arc<Mutex<OnlineUsers>>,
+    online_users: Arc<OnlineUsers>,
     file_dir: String,
 ) -> Result<()> {
     let (rd, wt) = stream.split();
@@ -40,30 +40,33 @@ pub async fn process(
                 let ok_error = match result {
                     Some(Ok(msg)) => match msg.command {
                         Command::OnlineList => {
-                            handler::online_list(Arc::clone(&online_users), &username).await
+                            online_users.send(&username, online_users.to_msg().await.set_sender("Server")).await
                         }
                         Command::SendMsg => {
-                            handler::send_from(Arc::clone(&online_users), &username, msg).await
+                            online_users.send(&msg.get_receiver(), msg.set_sender(&username)).await
                         }
-                        Command::SendBytes => {
-                            handler::send_from(Arc::clone(&online_users), &username, msg).await
+                        Command::FileKey => {
+                            online_users.send(&msg.get_receiver(), msg.set_sender(&username)).await
+                        }
+                        Command::SendImage => {
+                            online_users.send(&msg.get_receiver(), msg.set_sender(&username)).await
                         }
                         Command::Help => {
-                            handler::help(Arc::clone(&online_users), &username).await
+                            online_users.send(&username, Command::help()).await
                         }
                         // TODO accept file
-                        _ => handler::help(Arc::clone(&online_users), &username).await
+                        _ => online_users.send(&username, Command::help()).await
                     },
                     _ => {
                         tracing::info!("user {} with ip {} has left the server.", username, addr);
-                        handler::error(handler::disconnect(Arc::clone(&online_users), &username).await);
+                        online_users.remove_user(&username).await;
                         break;
                     }
                 };
                 handler::error(ok_error);
             }
             Some(msg) = rx.recv() => {
-                handler::error(handler::recv_msg(msg, &mut wt_frame).await);
+                handler::error(wt_frame.send(msg).await.map_err(|_| Error::ServerToClient))
             }
         }
     }

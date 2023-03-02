@@ -74,30 +74,54 @@ impl Into<BytesMut> for Message {
 }
 
 impl Message {
-    pub fn send_text(from: &str, to: &str, content: &str) -> Self {
+    pub fn send_text(to: &str, content: &str) -> Self {
         Self {
-            sender: from.into(),
+            sender: "".into(),
             receiver: to.into(),
             command: Command::SendMsg,
             content: Content::Text(content.into()),
         }
     }
 
-    pub fn send_file(from: &str, to: &str, filename: &str, content: BytesMut) -> Self {
+    pub fn send_file(to: &str, filename: &str, content: BytesMut) -> Self {
         Self {
-            sender: from.into(),
+            sender: "".into(),
             receiver: to.into(),
             command: Command::SendBytes,
             content: Content::file(filename, content),
         }
     }
 
-    pub fn send_image(from: &str, to: &str, filename: &str, content: BytesMut) -> Self {
+    pub fn send_image(to: &str, filename: &str, content: BytesMut) -> Self {
         Self {
-            sender: from.into(),
+            sender: "".into(),
             receiver: to.into(),
             command: Command::SendImage,
             content: Content::file(filename, content),
         }
+    }
+
+    pub fn file_key(to: &str, filename: &str, key: &str) -> Self {
+        Self {
+            sender: "".into(),
+            receiver: to.into(),
+            command: Command::FileKey,
+            content: Content::file(filename, BytesMut::from(key)),
+        }
+    }
+
+    // for convenience of chain call 
+    pub fn set_sender(mut self, sender: &str) -> Self {
+        self.sender = sender.into();
+        self
+    }
+
+    pub fn set_receiver(mut self, receiver: &str) -> Self {
+        self.receiver = receiver.into();
+        self
+    }
+
+    pub fn get_receiver(&self) -> String {
+        self.receiver.clone()
     }
 }
