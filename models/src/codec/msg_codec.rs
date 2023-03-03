@@ -104,18 +104,13 @@ impl Encoder<Message> for MsgCodec {
                 let mut temp = self.download_root.clone();
                 temp.push(path);
                 dst.reserve(cmd_arg_bytes.len());
-                println!("{:?}", cmd_arg_bytes);
                 dst.put(cmd_arg_bytes);
-                println!("C");
-                println!("{:?}", temp);
                 let mut file = File::open(temp)?;
-                println!("D");
                 let mut buffer = [0u8; 2048];
                 while let Ok(n) = file.read(&mut buffer) {
                     if n == 0 {
                         break;
                     }
-                    println!("{:?}", &buffer[..n]);
                     dst.reserve(n);
                     dst.put(&buffer[..n]);
                 }
