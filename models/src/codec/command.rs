@@ -43,7 +43,7 @@ impl Command {
     pub fn content(&self) -> Content {
         match self {
             Self::SendImage => Content::File(FileData::default()),
-            Self::SendBytes => Content::File(FileData::default()),
+            Self::FileKey => Content::File(FileData::default()),
             _ => Content::Text(String::default()),
         }
     }

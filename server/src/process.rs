@@ -45,6 +45,9 @@ pub async fn process(
                         Command::SendMsg => {
                             online_users.send(&msg.get_receiver(), msg.set_sender(&username)).await
                         }
+                        Command::SendBytes => {
+                            online_users.send(&username, msg).await
+                        }
                         Command::FileKey => {
                             online_users.send(&msg.get_receiver(), msg.set_sender(&username)).await
                         }

@@ -1,10 +1,10 @@
 use bytes::{Buf, BufMut, BytesMut};
-use chrono::prelude::*;
-use sha256::digest;
 use std::fs::{create_dir_all, File, OpenOptions};
-use std::io::Write;
-use std::{cmp, io, usize};
+use std::io::{self, Read, Write};
+use std::path::PathBuf;
+use std::{cmp, usize};
 use tokio_util::codec::{Decoder, Encoder};
+use uuid::Uuid;
 
 use crate::codec::{
     command::Command,
@@ -29,13 +29,17 @@ pub enum CodecRole {
 pub struct MsgCodec {
     role: CodecRole,
     command: Option<Command>,
-    // [content-length, receiver, (filename), (file_path), (key)]
+    // [content-length, sender, receiver, filename]
     args: Option<Vec<String>>,
     content_remain: usize,
+
     max_before_delimiter: usize,
     next_index: usize,
     is_discarding: bool,
-    download_path: String,
+
+    download_root: PathBuf,
+    file_path: PathBuf,
+    file_key: String,
 }
 
 impl MsgCodec {
@@ -48,7 +52,9 @@ impl MsgCodec {
             content_remain: 0,
             max_before_delimiter: 256,
             is_discarding: false,
-            download_path: path.into(),
+            download_root: path.into(),
+            file_path: PathBuf::new(),
+            file_key: String::new(),
         }
     }
 
@@ -68,6 +74,7 @@ impl MsgCodec {
     pub fn init(&mut self) {
         self.command = None;
         self.args = None;
+        self.file_path = PathBuf::new();
         self.next_index = 0;
         self.content_remain = 0;
         self.is_discarding = false;
@@ -91,10 +98,38 @@ impl Encoder<Message> for MsgCodec {
     type Error = io::Error;
 
     fn encode(&mut self, item: Message, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        let bytes: BytesMut = item.into();
-        dst.reserve(bytes.len());
-        dst.put(bytes);
-        Ok(())
+        match item.command {
+            Command::SendBytes => {
+                let (cmd_arg_bytes, path) = item.cmd_arg_bytes_path()?;
+                let mut temp = self.download_root.clone();
+                temp.push(path);
+                dst.reserve(cmd_arg_bytes.len());
+                println!("{:?}", cmd_arg_bytes);
+                dst.put(cmd_arg_bytes);
+                println!("C");
+                println!("{:?}", temp);
+                let mut file = File::open(temp)?;
+                println!("D");
+                let mut buffer = [0u8; 2048];
+                while let Ok(n) = file.read(&mut buffer) {
+                    if n == 0 {
+                        break;
+                    }
+                    println!("{:?}", &buffer[..n]);
+                    dst.reserve(n);
+                    dst.put(&buffer[..n]);
+                }
+                dst.reserve(1);
+                dst.put("$".as_bytes());
+                Ok(())
+            }
+            _ => {
+                let bytes: BytesMut = item.into();
+                dst.reserve(bytes.len());
+                dst.put(bytes);
+                Ok(())
+            }
+        }
     }
 }
 
@@ -142,7 +177,7 @@ fn read_args(codec: &mut MsgCodec, buf: &mut BytesMut) -> Result<Option<Vec<Stri
             let args_bytes = buf.split_to(args_end_index);
             let args_string = String::from_utf8_lossy(&args_bytes).to_string();
             let args_vec: Vec<String> = args_string.split(",").map(|s| s.into()).collect();
-            if args_vec.len() != 3 {
+            if args_vec.len() != 4 {
                 return Err(());
             }
             buf.advance(1);
@@ -153,14 +188,12 @@ fn read_args(codec: &mut MsgCodec, buf: &mut BytesMut) -> Result<Option<Vec<Stri
     }
 }
 
-fn init_file(dir_path: &str, file_name: &str) -> io::Result<(String, String)> {
-    create_dir_all(dir_path)?;
-    let time = Utc::now().format("%Y-%m-%d_%H:%M:%S").to_string();
-    let raw = format!("{}{}", time, file_name);
-    let key = digest(raw);
-    let file_path = format!("{}/{}", dir_path, key);
-    File::create(&file_path)?;
-    Ok((file_path, key))
+fn init_file(mut dir_path: PathBuf) -> io::Result<(PathBuf, String)> {
+    create_dir_all(&dir_path)?;
+    let key = Uuid::new_v4().to_string();
+    dir_path.push(&key);
+    File::create(&dir_path)?;
+    Ok((dir_path, key))
 }
 
 fn handle_remain(codec: &mut MsgCodec, buf: &mut BytesMut) -> Result<Option<()>, ()> {
@@ -195,12 +228,22 @@ impl Decoder for MsgCodec {
                 MsgCodecStatus::Args => match read_args(self, buf) {
                     Err(_) => return Ok(Some(Command::help())),
                     Ok(None) => return Ok(None),
-                    Ok(Some(mut args_vec)) => {
+                    Ok(Some(args_vec)) => {
                         if Some(Command::SendBytes) == self.command {
-                            let dir_path = format!("{}/{}", self.download_path, &args_vec[1]);
-                            let (file_path, key) = init_file(&dir_path, &args_vec[2])?;
-                            args_vec.push(file_path);
-                            args_vec.push(key);
+                            match self.role {
+                                CodecRole::Server => {
+                                    let mut dir_path = self.download_root.clone();
+                                    dir_path.push(&args_vec[2]);
+                                    let (file_path, key) = init_file(dir_path)?;
+                                    self.file_path = file_path;
+                                    self.file_key = key;
+                                }
+                                CodecRole::Client => {
+                                    let mut temp = self.download_root.clone();
+                                    temp.push(&args_vec[3]);
+                                    self.file_path = temp;
+                                }
+                            }
                         }
                         self.args = Some(args_vec);
                     }
@@ -210,21 +253,23 @@ impl Decoder for MsgCodec {
 
                     match self.command {
                         Some(Command::SendBytes) => {
-                            let file_path = &args[3];
-                            let mut file = OpenOptions::new().append(true).open(file_path)?;
                             let read_to = cmp::min(buf.len(), self.content_remain);
                             let content_bytes = buf.split_to(read_to);
                             self.content_remain -= read_to;
+                            let mut file = OpenOptions::new().append(true).open(&self.file_path)?;
                             file.write_all(&content_bytes)?;
                             match handle_remain(self, buf) {
                                 Err(_) => return Ok(Some(Command::help())),
                                 Ok(None) => return Ok(None),
                                 Ok(Some(_)) => {
-                                    let receiver = args[1].clone();
-                                    let filename = args[2].clone();
-                                    let key = args[4].clone();
+                                    let sender = args[1].clone();
+                                    let receiver = args[2].clone();
+                                    let filename = args[3].clone();
+                                    let key = self.file_key.clone();
                                     self.init();
-                                    return Ok(Some(Message::file_key(&receiver, &filename, &key)));
+                                    return Ok(Some(Message::file_key(
+                                        &sender, &receiver, &filename, &key,
+                                    )));
                                 }
                             }
                         }
@@ -239,19 +284,39 @@ impl Decoder for MsgCodec {
                                 Ok(None) => return Ok(None),
                                 Ok(Some(_)) => {
                                     let command = self.command.as_ref().unwrap().clone();
+                                    let sender = args[1].clone();
+                                    let receiver = args[2].clone();
                                     let content = match command.content() {
                                         Content::Text(_) => Content::Text(
                                             String::from_utf8_lossy(&content_bytes).to_string(),
                                         ),
-                                        Content::File(_) => Content::file(&args[2], content_bytes),
+                                        Content::File(_) => Content::file(&args[3], content_bytes),
                                     };
                                     self.init();
-                                    return Ok(Some(Message {
-                                        sender: "".into(),
-                                        receiver: args[1].clone(),
-                                        command,
-                                        content,
-                                    }));
+                                    return match command {
+                                        Command::FileKey if CodecRole::Server == self.role => {
+                                            let key = String::from_utf8_lossy(
+                                                &content.into_filedata().unwrap().bytes,
+                                            )
+                                            .to_string();
+                                            let mut dir = self.download_root.clone();
+                                            dir.push(&receiver);
+                                            dir.push(&key);
+                                            Ok(Some(
+                                                Message::send_file(
+                                                    &receiver,
+                                                    &dir.into_os_string().to_string_lossy(),
+                                                )
+                                                .set_sender(&sender),
+                                            ))
+                                        }
+                                        _ => Ok(Some(Message {
+                                            sender,
+                                            receiver,
+                                            command,
+                                            content,
+                                        })),
+                                    };
                                 }
                             }
                         }

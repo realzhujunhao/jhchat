@@ -16,6 +16,7 @@ pub enum Error {
     InvalidMessage,
     Channel,
     RwLock,
+    FilePath(String),
 }
 
 impl Display for Error {
@@ -31,6 +32,7 @@ impl Display for Error {
             Self::RwLock => write!(f, "RwLock"),
             Self::Listen(port) => write!(f, "Listen {}", port),
             Self::Config => write!(f, "Config"),
+            Self::FilePath(path) => write!(f, "FilePath {:?}", path),
 
             Self::ConnectionFail(addr) => write!(f, "ConnectionFail {:?}", addr),
             Self::ClientToServer => write!(f, "ClientToServer"),

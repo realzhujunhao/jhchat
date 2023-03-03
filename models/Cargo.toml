@@ -16,3 +16,4 @@ tracing.workspace = true
 sha256.workspace = true
 chrono = { workspace = true, features = ["unstable-locales"] }
 strum = { workspace = true, features = ["derive"] }
+uuid = { workspace = true, features = ["v4", "fast-rng", "macro-diagnostics"] }
