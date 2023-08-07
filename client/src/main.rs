@@ -4,14 +4,16 @@ use bytes::BytesMut;
 use models::codec::command::Command;
 use request::*;
 use tokio_stream::StreamExt;
-use std::{env, error::Error, net::SocketAddr};
+use std::{env, error::Error};
+use std::net::ToSocketAddrs;
 use tokio::{io::{self, AsyncBufReadExt}, fs};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = env::args().skip(1).collect();
     let addr = args.first().ok_or("need addr as argument")?;
-    let addr: SocketAddr = addr.parse()?;
+    let addr = addr.to_socket_addrs()?.next().ok_or("Address resolution error")?;
+
 
     let (mut rd, mut wt) = connect(addr).await?;
 
