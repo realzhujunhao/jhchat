@@ -1,31 +1,73 @@
 use models::{
-    config::ServerConfig,
+    config::{Config, ServerConfig},
     error::{Error, Result},
 };
-use tokio::net::TcpListener;
-use tracing_subscriber::{filter::LevelFilter, fmt::format::FmtSpan, EnvFilter};
 use std::fs::create_dir_all;
+use time::macros::{offset, format_description};
+use tokio::net::TcpListener;
+use tracing_subscriber::{
+    fmt::{self, format::FmtSpan, time::OffsetTime},
+    prelude::__tracing_subscriber_SubscriberExt,
+    util::SubscriberInitExt,
+};
 
-pub async fn connection(ip: &str, port: &str) -> Result<TcpListener> {
+#[tracing::instrument]
+pub async fn listen(ip: &str, port: &str) -> Result<TcpListener> {
     let addr = format!("{}:{}", ip, port);
-    let listener = TcpListener::bind(&addr).await.map_err(|_| Error::Listen(port.into()))?;
+    let listener = TcpListener::bind(&addr)
+        .await
+        .map_err(|_| Error::Listen(port.into()))?;
     tracing::info!("server running on {}", addr);
     Ok(listener)
 }
 
+#[tracing::instrument]
 pub fn config() -> Result<ServerConfig> {
-    let default_config = ServerConfig::default();
-    let config = default_config.init().map_err(|_| Error::Config)?;
+    let config = ServerConfig::init().map_err(|_| Error::Config)?;
     Ok(config)
 }
 
-pub fn file_structure(file_dir: &str) {
+#[tracing::instrument]
+pub fn create_directories(file_dir: &str) {
     let _ = create_dir_all(file_dir);
 }
 
-pub fn trace() {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env().add_directive(LevelFilter::INFO.into()))
-        .with_span_events(FmtSpan::FULL)
+/**
+ * print log -> std out & files "`exe_dir`/server_log/"
+ */
+pub fn trace() -> tracing_appender::non_blocking::WorkerGuard {
+    let mut log_dir = std::env::current_exe().expect("failed to read cur exe");
+    log_dir.pop();
+    log_dir.push("server_log");
+    let file_appender = tracing_appender::rolling::daily(log_dir, "chat");
+    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+
+    let time_offset = offset!(+9);
+    let time_description = format_description!("[year]/[month]/[day]-[hour]:[minute]:[second]");
+    let timer = OffsetTime::new(time_offset, time_description);
+
+    let file_layer = fmt::layer()
+        .with_timer(timer.clone())
+        .with_line_number(true)
+        .with_thread_ids(true)
+        .with_span_events(FmtSpan::ACTIVE)
+        .with_file(true)
+        .with_writer(non_blocking)
+        .with_ansi(false)
+        .compact();
+
+    let std_layer = fmt::layer()
+        .with_timer(timer)
+        .with_line_number(true)
+        .with_thread_ids(true)
+        .with_file(true)
+        .with_span_events(FmtSpan::ACTIVE)
+        .compact();
+
+    tracing_subscriber::registry()
+        .with(file_layer)
+        .with(std_layer)
         .init();
+
+    guard
 }

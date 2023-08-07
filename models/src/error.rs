@@ -33,7 +33,6 @@ impl Display for Error {
             Self::Listen(port) => write!(f, "Listen {}", port),
             Self::Config => write!(f, "Config"),
             Self::FilePath(path) => write!(f, "FilePath {:?}", path),
-
             Self::ConnectionFail(addr) => write!(f, "ConnectionFail {:?}", addr),
             Self::ClientToServer => write!(f, "ClientToServer"),
         }

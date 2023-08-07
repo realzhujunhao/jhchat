@@ -1,20 +1,20 @@
 mod init;
-mod process;
-mod handler;
-use std::{error::Error, sync::Arc, env};
+mod process; mod handler;
+use std::{error::Error, sync::Arc};
 
 use process::process;
 use models::server_state::OnlineUsers;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    init::trace();
-    env::set_var("RUST_BACKTRACE", "full");
+    let _guard = init::trace();
 
     let config = init::config()?;
-    init::file_structure(&config.file_dir);
+    init::create_directories(&config.file_dir);
     let online_users = Arc::new(OnlineUsers::new());
-    let listener = init::connection(&config.ip, &config.port).await?;
+    let listener = init::listen(&config.ip, &config.port).await?;
+
+    tracing::info!("this is a test log");
 
     loop {
         let online_users = Arc::clone(&online_users);
@@ -26,4 +26,5 @@ async fn main() -> Result<(), Box<dyn Error>> {
             handler::error(result);
         });
     }
+
 }

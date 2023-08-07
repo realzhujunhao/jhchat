@@ -174,7 +174,6 @@ impl Message {
         }
     }
 
-    // for convenience of chain call
     pub fn set_sender(mut self, sender: &str) -> Self {
         self.sender = sender.into();
         self

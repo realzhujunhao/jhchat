@@ -6,7 +6,11 @@ use std::{
     path::PathBuf,
 };
 
-trait Config {
+pub trait Config {
+    type This;
+
+    fn init() -> io::Result<Self::This>;
+
     fn write_string(content: &str) -> io::Result<()> {
         let mut file = Self::config_file()?;
         Ok(file.write_all(content.as_bytes())?)
@@ -28,11 +32,12 @@ trait Config {
             .open(path)?)
     }
 
-    fn is_exist() -> io::Result<bool> {
+    fn exist() -> io::Result<bool> {
         let path = Self::config_path()?;
         path.try_exists()
     }
 
+    /// config.json locates under same directory as executable
     fn config_path() -> io::Result<PathBuf> {
         let mut exe_path = env::current_exe()?;
         exe_path.pop();
@@ -42,8 +47,6 @@ trait Config {
     }
 }
 
-impl Config for ServerConfig {}
-impl Config for ClientConfig {}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ServerConfig {
@@ -52,34 +55,57 @@ pub struct ServerConfig {
     pub file_dir: String,
 }
 
-impl ServerConfig {
-    pub fn init(self) -> io::Result<Self> {
-        match Self::is_exist()? {
+impl Config for ServerConfig {
+    type This = Self;
+
+    /**
+     * if `config.json` exists, use it
+     * if not, create a default config file
+     */
+    fn init() -> io::Result<Self::This> {
+        let default_config = Self::default();
+        match Self::exist()? {
             true => {
                 let content = Self::read_string()?;
                 Ok(serde_json::from_str(&content)?)
             }
             false => {
-                let content = serde_json::to_string(&self)?;
+                let content = serde_json::to_string_pretty(&default_config)?;
                 Self::write_string(&content)?;
-                println!("Warn: config.json is newly created, please restart the server after configuration.");
-                Ok(self)
+                Ok(default_config)
             }
-        }
+        } 
     }
 }
 
 impl Default for ServerConfig {
     fn default() -> Self {
+        let mut file_path = env::current_exe().expect("failed to get exe path");
+        file_path.pop();
+        file_path.push("chat_server_file");
         Self {
             ip: "0.0.0.0".into(),
             port: "2333".into(),
-            file_dir: "/Users/junhaozhu/Downloads/test".into(),
+            file_dir: file_path.to_string_lossy().to_string(),
         }
     }
 }
 
+// TODO
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ClientConfig {
     pub download_path: String,
 }
+
+impl Config for ClientConfig {
+    type This = Self;
+
+    fn init() -> io::Result<Self::This> {
+        Ok(Self {
+            download_path: "./down/".into(),
+        })
+    }
+}
+
+
+

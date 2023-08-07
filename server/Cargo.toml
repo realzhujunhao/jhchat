@@ -6,11 +6,13 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-models = { path="../models" }
+models = { path = "../models" }
 tokio = { workspace = true, features = ["full", "tracing"] }
 bytes.workspace = true
-tracing.workspace = true 
-tracing-subscriber.workspace = true
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["local-time"] }
+tracing-appender = { workspace = true }
+time = { workspace = true, features = ["macros"] }
 tokio-util.workspace = true
 tokio-stream.workspace = true
 futures.workspace = true
