@@ -1,29 +1,37 @@
 use bytes::BytesMut;
 use futures::SinkExt;
 use models::{
+    codec::{message::Message, msg_codec::MsgCodec},
     error::{Error, Result},
-    msg_codec::MsgCodec, message::Message,
 };
 use std::net::SocketAddr;
-use tokio::net::{
-    tcp::{OwnedReadHalf, OwnedWriteHalf},
-    TcpStream,
-};
+use tokio::net::{TcpStream, tcp::{OwnedReadHalf, OwnedWriteHalf}};
 use tokio_util::codec::{FramedRead, FramedWrite};
 
 type Reader = FramedRead<OwnedReadHalf, MsgCodec>;
 type Writer = FramedWrite<OwnedWriteHalf, MsgCodec>;
 
-//TODO ADD CONFIG DOWNLOAD PATH
 pub async fn connect(addr: SocketAddr) -> Result<(Reader, Writer)> {
     let stream = TcpStream::connect(addr)
         .await
         .map_err(|_| Error::ConnectionFail(addr))?;
     let (rd, wt) = stream.into_split();
     Ok((
-        FramedRead::new(rd, MsgCodec::new("TODO")),
-        FramedWrite::new(wt, MsgCodec::new("TODO")),
+        FramedRead::new(rd, MsgCodec::new()),
+        FramedWrite::new(wt, MsgCodec::new()),
     ))
+}
+
+pub async fn login(writer: &mut Writer, uid: &str) -> Result<()> {
+    let msg = Message::login(uid);
+    writer.send(msg).await.map_err(|_| Error::ClientToServer)?;
+    Ok(())
+}
+
+pub async fn list(writer: &mut Writer) -> Result<()> {
+    let msg = Message::online_list("");
+    writer.send(msg).await.map_err(|_| Error::ClientToServer)?;
+    Ok(())
 }
 
 pub async fn send_text(writer: &mut Writer, to: &str, content: &str) -> Result<()> {
@@ -32,8 +40,13 @@ pub async fn send_text(writer: &mut Writer, to: &str, content: &str) -> Result<(
     Ok(())
 }
 
-pub async fn send_image(writer: &mut Writer, to: &str, content: BytesMut) -> Result<()> {
-    let msg = Message::send_image(to, content);
+pub async fn send_image(
+    writer: &mut Writer,
+    to: &str,
+    filename: &str,
+    content: BytesMut,
+) -> Result<()> {
+    let msg = Message::send_image(to, filename, content);
     writer.send(msg).await.map_err(|_| Error::ClientToServer)?;
     Ok(())
 }

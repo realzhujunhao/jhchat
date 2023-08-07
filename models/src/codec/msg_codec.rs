@@ -1,16 +1,16 @@
 use bytes::{Buf, BufMut, BytesMut};
-use std::fs::{create_dir_all, File, OpenOptions};
-use std::io::{self, Read, Write};
-use std::path::PathBuf;
+use std::io;
 use std::{cmp, usize};
 use tokio_util::codec::{Decoder, Encoder};
-use uuid::Uuid;
 
 use crate::codec::{
     command::Command,
     message::{Content, Message},
 };
 
+/// the four states in MessageDecoder
+/// `Command`, `Args`, `Content` are stages that parse sections w.r.t their name
+/// `Discarding` stage clears the read buffer to make sure later frames are not affected  
 #[derive(Debug)]
 pub enum MsgCodecStatus {
     Command,
@@ -19,45 +19,48 @@ pub enum MsgCodecStatus {
     Discarding,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Hash)]
-pub enum CodecRole {
-    Server,
-    Client,
-}
-
+/// necessary internal states
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct MsgCodec {
-    role: CodecRole,
+    // Command in `Message`
     command: Option<Command>,
+
     // [content-length, sender, receiver, filename]
     args: Option<Vec<String>>,
-    content_remain: usize,
 
+    // max length of `Command` and `Args`
     max_before_delimiter: usize,
-    next_index: usize,
-    is_discarding: bool,
 
-    download_root: PathBuf,
-    file_path: PathBuf,
-    file_key: String,
+    // expected length of content
+    content_len: usize,
+
+    // triggered when byte stream is in wrong form -> discard to end
+    is_discarding: bool,
 }
 
 impl MsgCodec {
-    pub fn new(role: CodecRole, path: &str) -> Self {
+    pub fn new() -> Self {
         Self {
-            role,
             command: None,
             args: None,
-            next_index: 0,
-            content_remain: 0,
-            max_before_delimiter: 256,
+            max_before_delimiter: 512,
+            content_len: 0,
             is_discarding: false,
-            download_root: path.into(),
-            file_path: PathBuf::new(),
-            file_key: String::new(),
         }
     }
 
+    /// for either `Discarding` or complete
+    pub fn reset(&mut self) {
+        self.command = None;
+        self.args = None;
+        self.max_before_delimiter = 512;
+        self.content_len = 0;
+        self.is_discarding = false;
+    }
+
+    /// determine current state
+    /// Args, Command, Content are decoded only when the end delimiter arrives
+    /// that is, bytes are not modified partially, but as a whole section
     pub fn status(&self) -> MsgCodecStatus {
         if self.is_discarding {
             return MsgCodecStatus::Discarding;
@@ -70,268 +73,179 @@ impl MsgCodec {
         }
         MsgCodecStatus::Content
     }
+}
 
-    pub fn init(&mut self) {
-        self.command = None;
-        self.args = None;
-        self.file_path = PathBuf::new();
-        self.next_index = 0;
-        self.content_remain = 0;
-        self.is_discarding = false;
+impl Default for MsgCodec {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
+/// remove white space from beginning of buffer
+/// if `buf.first()` returns None, i.e buffer is empty, default false breaks the loop
+/// otherwise, this while loop continues until first byte is not ascii white space
 fn trim_front(buf: &mut BytesMut) {
-    while let Some(b'\n') = buf.first() {
-        buf.advance(1);
-    }
-    while let Some(b'\r') = buf.first() {
-        buf.advance(1);
-    }
-    while let Some(b' ') = buf.first() {
+    while buf
+        .first()
+        .map_or(false, |&byte| byte.is_ascii_whitespace())
+    {
         buf.advance(1);
     }
 }
 
-//TODO
+/// simply serialize `Message` into bytes and put into buffer
 impl Encoder<Message> for MsgCodec {
     type Error = io::Error;
 
     fn encode(&mut self, item: Message, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        match item.command {
-            Command::SendBytes => {
-                let (cmd_arg_bytes, path) = item.cmd_arg_bytes_path()?;
-                let mut temp = self.download_root.clone();
-                temp.push(path);
-                dst.reserve(cmd_arg_bytes.len());
-                dst.put(cmd_arg_bytes);
-                let mut file = File::open(temp)?;
-                let mut buffer = [0u8; 2048];
-                while let Ok(n) = file.read(&mut buffer) {
-                    if n == 0 {
-                        break;
-                    }
-                    dst.reserve(n);
-                    dst.put(&buffer[..n]);
-                }
-                dst.reserve(1);
-                dst.put("$".as_bytes());
-                Ok(())
-            }
-            _ => {
-                let bytes: BytesMut = item.into();
-                dst.reserve(bytes.len());
-                dst.put(bytes);
-                Ok(())
-            }
-        }
+        let bytes: BytesMut = item.into();
+        dst.reserve(bytes.len());
+        dst.put(bytes);
+        Ok(())
     }
 }
 
-fn read_offset_limited(
+/// read the buffer to the limit or #bytes in buffer
+/// search for byte index of delimiter as UTF-8 character
+/// Ok(None) if not found
+/// Ok(Some(offset)) if found
+/// Err(()) if exceed limit
+fn find_delimiter(
     codec: &mut MsgCodec,
     buf: &mut BytesMut,
-    delimiter: u8,
+    delimiter: char,
 ) -> Result<Option<usize>, ()> {
     let read_to = cmp::min(codec.max_before_delimiter, buf.len());
-    let offset = buf[codec.next_index..read_to]
-        .iter()
-        .position(|b| *b == delimiter);
-    match offset {
-        None if buf.len() > codec.max_before_delimiter => {
-            codec.is_discarding = true;
-            return Err(());
-        }
-        None => {
-            codec.next_index = read_to;
-            return Ok(None);
-        }
-        Some(offset_from_next) => return Ok(Some(offset_from_next)),
+    let slice = &buf[0..read_to];
+    let utf8_string = String::from_utf8_lossy(slice);
+    let delimiter_idx = utf8_string
+        .char_indices()
+        .find(|(_, ch)| *ch == delimiter)
+        .map(|(byte_idx, _)| byte_idx);
+
+    match delimiter_idx {
+        None if buf.len() > codec.max_before_delimiter => Err(()),
+        None => Ok(None),
+        Some(deli_idx) => Ok(Some(deli_idx)),
     }
 }
 
+/// read until limit, propagate error if exceed limit
+/// if delimiter not found return Ok(None)
+/// otherwise deserialize command and remove all bytes include delimiter from buffer
 fn read_command(codec: &mut MsgCodec, buf: &mut BytesMut) -> Result<Option<Command>, ()> {
-    match read_offset_limited(codec, buf, b'#')? {
+    match find_delimiter(codec, buf, '#')? {
         None => Ok(None),
-        Some(offset_from_next) => {
-            let cmd_end_index = codec.next_index + offset_from_next;
-            let mut command_bytes = buf.split_to(cmd_end_index);
-            trim_front(&mut command_bytes);
+        Some(delimiter_idx) => {
+            let mut command_bytes = buf.split_to(delimiter_idx);
             buf.advance(1);
-            codec.next_index = 0;
+
+            trim_front(&mut command_bytes);
             Ok(Some(Command::from(command_bytes)))
         }
     }
 }
 
+/// read until limit, propagate error if exceed limit
+/// if delimiter not found return Ok(None)
+/// otherwise deserialize arguments and remove all bytes include delimiter from buffer
 fn read_args(codec: &mut MsgCodec, buf: &mut BytesMut) -> Result<Option<Vec<String>>, ()> {
-    match read_offset_limited(codec, buf, b'|')? {
+    match find_delimiter(codec, buf, '|')? {
         None => Ok(None),
-        Some(offset_from_next) => {
-            let args_end_index = codec.next_index + offset_from_next;
-            let args_bytes = buf.split_to(args_end_index);
+        Some(delimiter_idx) => {
+            let args_bytes = buf.split_to(delimiter_idx);
+            buf.advance(1);
+
             let args_string = String::from_utf8_lossy(&args_bytes).to_string();
-            let args_vec: Vec<String> = args_string.split(",").map(|s| s.into()).collect();
+            let args_vec: Vec<String> = args_string.split(',').map(|s| s.into()).collect();
             if args_vec.len() != 4 {
                 return Err(());
             }
-            buf.advance(1);
-            codec.next_index = 0;
-            codec.content_remain = args_vec[0].parse().map_err(|_| ())?;
+
+            codec.content_len = args_vec[0].parse().map_err(|_| ())?;
             Ok(Some(args_vec))
         }
     }
-}
-
-fn init_file(mut dir_path: PathBuf) -> io::Result<(PathBuf, String)> {
-    create_dir_all(&dir_path)?;
-    let key = Uuid::new_v4().to_string();
-    dir_path.push(&key);
-    File::create(&dir_path)?;
-    Ok((dir_path, key))
-}
-
-fn handle_remain(codec: &mut MsgCodec, buf: &mut BytesMut) -> Result<Option<()>, ()> {
-    if codec.content_remain != 0 {
-        return Ok(None);
-    }
-    if buf.len() == 0 {
-        return Ok(None);
-    }
-    if *buf.first().unwrap() != b'$' {
-        codec.is_discarding = true;
-        return Err(());
-    }
-    buf.advance(1);
-    Ok(Some(()))
 }
 
 impl Decoder for MsgCodec {
     type Item = Message;
     type Error = io::Error;
 
+    /// MessageDecoder is a state machine with four states
+    /// note that `Message` can be serialized into three sections
+    /// [Command, Arguments, Content]
+    /// where Arguments = `content-length,sender,receiver,filename`
+    /// bytes format: `command#length,sender,receiver,filename|content$`
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         loop {
             match self.status() {
+                // in case of wrong format, respond with help and reset buffer
                 MsgCodecStatus::Command => match read_command(self, buf) {
-                    Err(_) => return Ok(Some(Command::help())),
+                    Err(_) => {
+                        self.is_discarding = true;
+                        return Ok(Some(Command::help()));
+                    }
                     Ok(None) => return Ok(None),
                     Ok(Some(cmd)) => {
                         self.command = Some(cmd);
                     }
                 },
                 MsgCodecStatus::Args => match read_args(self, buf) {
-                    Err(_) => return Ok(Some(Command::help())),
+                    Err(_) => {
+                        self.is_discarding = true;
+                        return Ok(Some(Command::help()));
+                    }
                     Ok(None) => return Ok(None),
                     Ok(Some(args_vec)) => {
-                        if Some(Command::SendBytes) == self.command {
-                            match self.role {
-                                CodecRole::Server => {
-                                    let mut dir_path = self.download_root.clone();
-                                    dir_path.push(&args_vec[2]);
-                                    let (file_path, key) = init_file(dir_path)?;
-                                    self.file_path = file_path;
-                                    self.file_key = key;
-                                }
-                                CodecRole::Client => {
-                                    let mut temp = self.download_root.clone();
-                                    temp.push(&args_vec[3]);
-                                    self.file_path = temp;
-                                }
-                            }
-                        }
                         self.args = Some(args_vec);
                     }
                 },
                 MsgCodecStatus::Content => {
-                    let args = self.args.as_ref().unwrap().clone();
-
-                    match self.command {
-                        Some(Command::SendBytes) => {
-                            let read_to = cmp::min(buf.len(), self.content_remain);
-                            let content_bytes = buf.split_to(read_to);
-                            self.content_remain -= read_to;
-                            let mut file = OpenOptions::new().append(true).open(&self.file_path)?;
-                            file.write_all(&content_bytes)?;
-                            match handle_remain(self, buf) {
-                                Err(_) => return Ok(Some(Command::help())),
-                                Ok(None) => return Ok(None),
-                                Ok(Some(_)) => {
-                                    let sender = args[1].clone();
-                                    let receiver = args[2].clone();
-                                    let filename = args[3].clone();
-                                    let key = self.file_key.clone();
-                                    self.init();
-                                    return Ok(Some(Message::file_key(
-                                        &sender, &receiver, &filename, &key,
-                                    )));
-                                }
-                            }
-                        }
-                        _ => {
-                            if buf.len() <= self.content_remain {
-                                return Ok(None);
-                            }
-                            let content_bytes = buf.split_to(self.content_remain);
-                            self.content_remain = 0;
-                            match handle_remain(self, buf) {
-                                Err(_) => return Ok(Some(Command::help())),
-                                Ok(None) => return Ok(None),
-                                Ok(Some(_)) => {
-                                    let command = self.command.as_ref().unwrap().clone();
-                                    let sender = args[1].clone();
-                                    let receiver = args[2].clone();
-                                    let content = match command.content() {
-                                        Content::Text(_) => Content::Text(
-                                            String::from_utf8_lossy(&content_bytes).to_string(),
-                                        ),
-                                        Content::File(_) => Content::file(&args[3], content_bytes),
-                                    };
-                                    self.init();
-                                    return match command {
-                                        Command::FileKey if CodecRole::Server == self.role => {
-                                            let key = String::from_utf8_lossy(
-                                                &content.into_filedata().unwrap().bytes,
-                                            )
-                                            .to_string();
-                                            let mut dir = self.download_root.clone();
-                                            dir.push(&receiver);
-                                            dir.push(&key);
-                                            Ok(Some(
-                                                Message::send_file(
-                                                    &receiver,
-                                                    &dir.into_os_string().to_string_lossy(),
-                                                )
-                                                .set_sender(&sender),
-                                            ))
-                                        }
-                                        _ => Ok(Some(Message {
-                                            sender,
-                                            receiver,
-                                            command,
-                                            content,
-                                        })),
-                                    };
-                                }
-                            }
-                        }
+                    if buf.len() <= self.content_len {
+                        return Ok(None);
                     }
+                    if buf[self.content_len] != b'$' {
+                        self.is_discarding = true;
+                        return Ok(Some(Command::help()));
+                    }
+
+                    let command = self.command.take().unwrap();
+                    let args = self.args.take().unwrap();
+
+                    let sender = args[1].clone();
+                    let receiver = args[2].clone();
+
+                    let content_bytes = buf.split_to(self.content_len);
+                    let content = match command.content() {
+                        Content::Text(_) => {
+                            Content::Text(String::from_utf8_lossy(&content_bytes).to_string())
+                        }
+                        Content::File(_) => Content::file(&args[3], content_bytes),
+                    };
+
+                    buf.advance(1);
+                    self.reset();
+
+                    return Ok(Some(Message {
+                        sender,
+                        receiver,
+                        command,
+                        content,
+                    }));
                 }
                 MsgCodecStatus::Discarding => {
-                    let end_offset = buf[self.next_index..buf.len()]
-                        .iter()
-                        .position(|b| *b == b'$');
-                    match end_offset {
-                        Some(offset) => {
-                            buf.advance(offset + self.next_index + 1);
-                            self.init();
-                        }
-                        None => {
-                            buf.advance(buf.len());
-                            self.next_index = 0;
-                            if buf.is_empty() {
-                                return Ok(None);
-                            }
+                    let utf8_string = String::from_utf8_lossy(buf);
+                    let delimiter_idx = utf8_string
+                        .char_indices()
+                        .find(|(_, ch)| *ch == '$')
+                        .map(|(byte_idx, _)| byte_idx);
+                    match delimiter_idx {
+                        None => return Ok(None),
+                        Some(idx) => {
+                            buf.advance(idx);
+                            self.is_discarding = false;
+                            return Ok(None);
                         }
                     }
                 }

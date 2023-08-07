@@ -2,7 +2,6 @@ use models::{
     config::{Config, ServerConfig},
     error::{Error, Result},
 };
-use std::fs::create_dir_all;
 use time::macros::{offset, format_description};
 use tokio::net::TcpListener;
 use tracing_subscriber::{
@@ -25,11 +24,6 @@ pub async fn listen(ip: &str, port: &str) -> Result<TcpListener> {
 pub fn config() -> Result<ServerConfig> {
     let config = ServerConfig::init().map_err(|_| Error::Config)?;
     Ok(config)
-}
-
-#[tracing::instrument]
-pub fn create_directories(file_dir: &str) {
-    let _ = create_dir_all(file_dir);
 }
 
 /**

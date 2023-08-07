@@ -6,7 +6,7 @@ use models::{
     codec::{
         command::Command,
         message::Message,
-        msg_codec::{CodecRole, MsgCodec},
+        msg_codec::MsgCodec,
     },
     server_state::OnlineUsers,
 };
@@ -19,54 +19,35 @@ pub async fn process(
     mut stream: TcpStream,
     addr: SocketAddr,
     online_users: Arc<OnlineUsers>,
-    file_dir: String,
 ) -> Result<()> {
     let (rd, wt) = stream.split();
-    let mut rd_frame = FramedRead::new(rd, MsgCodec::new(CodecRole::Server, &file_dir));
-    let mut wt_frame = FramedWrite::new(wt, MsgCodec::new(CodecRole::Server, &file_dir));
+    let mut rd_frame = FramedRead::new(rd, MsgCodec::new());
+    let mut wt_frame = FramedWrite::new(wt, MsgCodec::new());
+
     wt_frame
         .send(Message {
             sender: "Server".into(),
             receiver: "N/A".into(),
             command: Command::Login,
-            content: Content::Text("login with username\n".into()),
+            content: Content::Text("please request with a login command\n".into()),
         })
         .await
         .map_err(|_| Error::Disconnect)?;
-    let (username, mut rx) = handler::login(Arc::clone(&online_users), &mut rd_frame, addr).await?;
+
+    let (uid, mut rx) = handler::login(Arc::clone(&online_users), &mut rd_frame, addr).await?;
     loop {
         tokio::select! {
             result = rd_frame.next() => {
-                let ok_error = match result {
-                    Some(Ok(msg)) => match msg.command {
-                        Command::OnlineList => {
-                            online_users.send(&username, online_users.to_msg().await.set_sender("Server")).await
-                        }
-                        Command::SendMsg => {
-                            online_users.send(&msg.get_receiver(), msg.set_sender(&username)).await
-                        }
-                        Command::SendBytes => {
-                            online_users.send(&username, msg).await
-                        }
-                        Command::FileKey => {
-                            online_users.send(&msg.get_receiver(), msg.set_sender(&username)).await
-                        }
-                        Command::SendImage => {
-                            online_users.send(&msg.get_receiver(), msg.set_sender(&username)).await
-                        }
-                        Command::Help => {
-                            online_users.send(&username, Command::help()).await
-                        }
-                        // TODO accept file
-                        _ => online_users.send(&username, Command::help()).await
+                 match result {
+                    Some(Ok(msg)) =>  {
+                        handle_incoming_msg(msg, &uid, Arc::clone(&online_users)).await
                     },
                     _ => {
-                        tracing::info!("user {} with ip {} has left the server.", username, addr);
-                        online_users.remove_user(&username).await;
+                        tracing::info!("user {} with ip {} has left the server.", uid, addr);
+                        online_users.remove_user(&uid).await;
                         break;
                     }
                 };
-                handler::error(ok_error);
             }
             Some(msg) = rx.recv() => {
                 handler::error(wt_frame.send(msg).await.map_err(|_| Error::ServerToClient))
@@ -75,3 +56,22 @@ pub async fn process(
     }
     Ok(())
 }
+
+#[tracing::instrument]
+async fn handle_incoming_msg(msg: Message, uid: &str, online_users: Arc<OnlineUsers>) {
+    let result = match msg.command {
+        Command::OnlineList => online_users.send(uid, online_users.to_msg().await.set_sender("Server")).await,
+        Command::SendMsg => online_users.send(&msg.get_receiver(), msg.set_sender(uid)).await,
+        Command::SendImage => online_users.send(&msg.get_receiver(), msg.set_sender(uid)).await,
+        Command::Help => online_users.send(uid, Command::help()).await,
+        Command::Login => Err(Error::Unreachable),
+    };
+    handler::error(result);
+}
+
+
+
+
+
+
+

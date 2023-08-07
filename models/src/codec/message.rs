@@ -1,8 +1,5 @@
 use crate::codec::command::Command;
 use bytes::{BufMut, BytesMut};
-use std::fs::File;
-use std::io;
-use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 pub enum Content {
@@ -10,11 +7,11 @@ pub enum Content {
     File(FileData),
 }
 
-impl Into<BytesMut> for Content {
-    fn into(self) -> BytesMut {
-        match self {
-            Self::Text(text) => BytesMut::from(text.as_bytes()),
-            Self::File(file) => file.bytes,
+impl From<Content> for BytesMut {
+    fn from(value: Content) -> Self {
+        match value {
+            Content::Text(text) => BytesMut::from(text.as_bytes()),
+            Content::File(file) => file.bytes,
         }
     }
 }
@@ -39,6 +36,10 @@ impl Content {
             Self::Text(text) => text.len(),
             Self::File(file) => file.bytes.len(),
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 
@@ -65,12 +66,12 @@ pub struct Message {
     pub content: Content,
 }
 
-impl Into<BytesMut> for Message {
-    fn into(self) -> BytesMut {
-        let args_bytes = BytesMut::from(self.args_string().as_bytes());
-        let command_bytes: BytesMut = self.command.into();
-        let content_bytes: BytesMut = self.content.into();
-
+/// serialize `Message` into bytes
+impl From<Message> for BytesMut {
+    fn from(value: Message) -> Self {
+        let args_bytes = BytesMut::from(value.args_string().as_bytes());
+        let command_bytes: BytesMut = value.command.into();
+        let content_bytes: BytesMut = value.content.into();
         let mut bytes = BytesMut::new();
         // command#args|content$
         bytes.reserve(command_bytes.len() + args_bytes.len() + content_bytes.len() + 3);
@@ -85,36 +86,6 @@ impl Into<BytesMut> for Message {
 }
 
 impl Message {
-    pub fn cmd_arg_bytes_path(self) -> io::Result<(BytesMut, PathBuf)> {
-        if let Content::Text(ref text) = self.content {
-            let command_bytes: BytesMut = self.command.into();
-            let file_path = Path::new(text);
-            let filename = file_path
-                .file_name()
-                .ok_or(io::Error::new(io::ErrorKind::NotFound, text.as_str()))?
-                .to_string_lossy()
-                .to_string();
-            let file_length = File::open(file_path)?.metadata()?.len();
-            let args_bytes = format!(
-                "{},{},{},{}",
-                file_length, self.sender, self.receiver, filename
-            );
-            let args_bytes = args_bytes.as_bytes();
-            let mut bytes = BytesMut::new();
-            bytes.reserve(command_bytes.len() + args_bytes.len() + 2);
-            bytes.put(command_bytes);
-            bytes.put("#".as_bytes());
-            bytes.put(args_bytes);
-            bytes.put("|".as_bytes());
-
-            let mut file_path = PathBuf::new();
-            file_path.push(&self.receiver);
-            file_path.push(&filename);
-            return Ok((bytes, file_path));
-        }
-        unreachable!()
-    }
-
     fn args_string(&self) -> String {
         let filename = match self.content {
             Content::Text(_) => "".into(),
@@ -128,6 +99,15 @@ impl Message {
             filename
         )
     }
+    
+    pub fn login(uid: &str) -> Self {
+        Self {
+            sender: "".into(),
+            receiver: "".into(),
+            command: Command::Login,
+            content: Content::Text(uid.into()),
+        }
+    }
 
     pub fn send_text(to: &str, content: &str) -> Self {
         Self {
@@ -135,15 +115,6 @@ impl Message {
             receiver: to.into(),
             command: Command::SendMsg,
             content: Content::Text(content.into()),
-        }
-    }
-
-    pub fn send_file(to: &str, path: &str) -> Self {
-        Self {
-            sender: "".into(),
-            receiver: to.into(),
-            command: Command::SendBytes,
-            content: Content::Text(path.into()),
         }
     }
 
@@ -162,15 +133,6 @@ impl Message {
             receiver: "".into(),
             command: Command::OnlineList,
             content: Content::Text(content.into()),
-        }
-    }
-
-    pub fn file_key(from: &str, to: &str, filename: &str, key: &str) -> Self {
-        Self {
-            sender: from.into(),
-            receiver: to.into(),
-            command: Command::FileKey,
-            content: Content::file(filename, BytesMut::from(key)),
         }
     }
 

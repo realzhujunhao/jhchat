@@ -13,7 +13,7 @@ pub trait Config {
 
     fn write_string(content: &str) -> io::Result<()> {
         let mut file = Self::config_file()?;
-        Ok(file.write_all(content.as_bytes())?)
+        file.write_all(content.as_bytes())
     }
 
     fn read_string() -> io::Result<String> {
@@ -25,11 +25,11 @@ pub trait Config {
 
     fn config_file() -> io::Result<File> {
         let path = Self::config_path()?;
-        Ok(OpenOptions::new()
+        OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
-            .open(path)?)
+            .open(path)
     }
 
     fn exist() -> io::Result<bool> {
@@ -47,12 +47,10 @@ pub trait Config {
     }
 }
 
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ServerConfig {
     pub ip: String,
     pub port: String,
-    pub file_dir: String,
 }
 
 impl Config for ServerConfig {
@@ -74,19 +72,15 @@ impl Config for ServerConfig {
                 Self::write_string(&content)?;
                 Ok(default_config)
             }
-        } 
+        }
     }
 }
 
 impl Default for ServerConfig {
     fn default() -> Self {
-        let mut file_path = env::current_exe().expect("failed to get exe path");
-        file_path.pop();
-        file_path.push("chat_server_file");
         Self {
             ip: "0.0.0.0".into(),
             port: "2333".into(),
-            file_dir: file_path.to_string_lossy().to_string(),
         }
     }
 }
@@ -106,6 +100,3 @@ impl Config for ClientConfig {
         })
     }
 }
-
-
-

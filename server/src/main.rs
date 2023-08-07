@@ -10,7 +10,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let _guard = init::trace();
 
     let config = init::config()?;
-    init::create_directories(&config.file_dir);
     let online_users = Arc::new(OnlineUsers::new());
     let listener = init::listen(&config.ip, &config.port).await?;
 
@@ -19,10 +18,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     loop {
         let online_users = Arc::clone(&online_users);
         let (stream, addr) = listener.accept().await?;
-        let file_dir = config.file_dir.clone();
 
         tokio::spawn(async move {
-            let result = process(stream, addr, online_users, file_dir).await;
+            let result = process(stream, addr, online_users).await;
             handler::error(result);
         });
     }

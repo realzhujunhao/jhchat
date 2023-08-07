@@ -11,31 +11,27 @@ pub enum Command {
     OnlineList,
     SendMsg,
     SendImage,
-    SendBytes,
-    FileKey,
 }
 
-
-impl Into<BytesMut> for Command {
-    fn into(self) -> BytesMut {
-        BytesMut::from(Into::<&str>::into(self))
+impl From<Command> for BytesMut {
+    fn from(value: Command) -> Self {
+        BytesMut::from(Into::<&str>::into(value))
     }
 }
 
 impl From<BytesMut> for Command {
     fn from(value: BytesMut) -> Self {
-        Self::from_str(&String::from_utf8_lossy(&value).to_string()).unwrap_or(Self::Help)
+        Self::from_str(&String::from_utf8_lossy(&value)).unwrap_or(Self::Help)
     }
 }
 
 impl Command {
     pub fn help() -> Message {
         let content_text = format!(
-            "\n{}\n{}\n{}\n{}\n",
-            r"OnlineList#0,,|$  ->  Request name list of online users",
-            r"SendMsgToUser#{length},{receiver},|{msg}$  ->  send msg to the specified user",
-            r"SendFileToUser#{length},{receiver},{filename}|{bytes}$  ->  send file to the specified user",
-            r"AcceptFile#,{receiver},|{key}$  ->  accept file",
+            "\n{}\n{}\n{}\n",
+            r"OnlineList#0,,|$ -> request online user list",
+            r"SendMsg#{length},{receiver},|{msg}$  ->  send msg",
+            r"SendImage#{length},{receiver},{filename}|{bytes}$  ->  send image",
         );
         Message::send_text("", &content_text).set_sender("Server")
     }
@@ -43,7 +39,6 @@ impl Command {
     pub fn content(&self) -> Content {
         match self {
             Self::SendImage => Content::File(FileData::default()),
-            Self::FileKey => Content::File(FileData::default()),
             _ => Content::Text(String::default()),
         }
     }

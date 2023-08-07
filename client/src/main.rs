@@ -1,8 +1,11 @@
-use bytes::Bytes;
-use futures::{future, Sink, Stream, StreamExt, SinkExt};
+mod request;
+
+use bytes::BytesMut;
+use models::codec::command::Command;
+use request::*;
+use tokio_stream::StreamExt;
 use std::{env, error::Error, net::SocketAddr};
-use tokio::{io, net::TcpStream};
-use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
+use tokio::{io::{self, AsyncBufReadExt}, fs};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -10,46 +13,43 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let addr = args.first().ok_or("need addr as argument")?;
     let addr: SocketAddr = addr.parse()?;
 
-    let stdin = FramedRead::new(io::stdin(), BytesCodec::new());
-    let stdin = stdin.map(|i| i.map(|bytes| bytes.freeze()));
-    let stdout = FramedWrite::new(io::stdout(), BytesCodec::new());
+    let (mut rd, mut wt) = connect(addr).await?;
 
-    connect(&addr, stdin, stdout).await?;
+    let stdin = io::stdin();
+    let mut reader = io::BufReader::new(stdin);
+    let mut line = String::new();
+
+    tokio::spawn(async move {
+        while let Some(Ok(msg)) = rd.next().await {
+            match msg.command {
+                Command::Help => println!("{:?}", msg), 
+                Command::SendMsg => println!("{:?}", msg),
+                Command::SendImage => println!("{:?}", msg),
+                Command::OnlineList => println!("{:?}", msg),
+                Command::Login => println!("{:?}", msg),
+            }
+        }
+    });
+
+    loop {
+        line.clear();
+        reader.read_line(&mut line).await?;
+        let args: Vec<String> = line.split_whitespace().map(|s| s.into()).collect();
+        match args[0].as_str() {
+            "login" => login(&mut wt, &args[1]).await?,
+            "list" => list(&mut wt).await?,
+            "text" => send_text(&mut wt, &args[1], &args[2]).await?,
+            "image" => {
+                let to = &args[1];
+                let path = &args[2]; 
+                let content = fs::read(path).await?;
+                let filename = path.rsplit('/').next().unwrap_or(path);
+                send_image(&mut wt, to, filename, BytesMut::from(content.as_slice())).await?
+            }
+            "exit" => break,
+            _ => unreachable!(),
+        }
+    }
 
     Ok(())
 }
-
-async fn connect(
-    addr: &SocketAddr,
-    mut stdin: impl Stream<Item = Result<Bytes, io::Error>> + Unpin,
-    mut stdout: impl Sink<Bytes, Error = io::Error> + Unpin,
-) -> Result<(), Box<dyn Error>> {
-    let mut stream = TcpStream::connect(addr).await?;
-    let (rd, wt) = stream.split();
-    let mut sink = FramedWrite::new(wt, BytesCodec::new());
-    let mut stream = FramedRead::new(rd, BytesCodec::new()).filter_map(|i| match i {
-        Ok(i) => future::ready(Some(i.freeze())),
-        Err(e) => {
-            println!("failed to read from socket; error = {}", e);
-            future::ready(None)
-        }
-    }).map(Ok);
-
-    match future::join(sink.send_all(&mut stdin), stdout.send_all(&mut stream)).await {
-        (Err(e), _) | (_, Err(e)) => Err(e.into()),
-        _ => Ok(()),
-    }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
