@@ -243,7 +243,7 @@ impl Decoder for MsgCodec {
                     match delimiter_idx {
                         None => return Ok(None),
                         Some(idx) => {
-                            buf.advance(idx);
+                            buf.advance(idx + 1);
                             self.is_discarding = false;
                             return Ok(None);
                         }
