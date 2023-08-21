@@ -99,7 +99,7 @@ impl Display for Message {
         };
         write!(
             f,
-            "{} -{}-> {}: {}",
+            "{} -{}-> {}:\n{}",
             self.sender.green(),
             self.command.as_ref().yellow(),
             self.receiver.green(),
