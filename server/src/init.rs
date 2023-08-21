@@ -1,6 +1,6 @@
 use models::{
     config::{Config, ServerConfig},
-    error::{Error, Result},
+    error::{GlobalResult, ExternalError},
 };
 use time::macros::{offset, format_description};
 use tokio::net::TcpListener;
@@ -11,24 +11,22 @@ use tracing_subscriber::{
 };
 
 #[tracing::instrument]
-pub async fn listen(ip: &str, port: &str) -> Result<TcpListener> {
+pub async fn listen(ip: &str, port: &str) -> GlobalResult<TcpListener> {
     let addr = format!("{}:{}", ip, port);
     let listener = TcpListener::bind(&addr)
         .await
-        .map_err(|_| Error::Listen(port.into()))?;
+        .map_err(|_| ExternalError::ListenPort.info(port))?;
     tracing::info!("server running on {}", addr);
     Ok(listener)
 }
 
 #[tracing::instrument]
-pub fn config() -> Result<ServerConfig> {
-    let config = ServerConfig::init().map_err(|_| Error::Config)?;
+pub fn config() -> GlobalResult<ServerConfig> {
+    let config = ServerConfig::init()?;
     Ok(config)
 }
 
-/**
- * print log -> std out & files "`exe_dir`/server_log/"
- */
+/// print log -> std out & files "`exe_dir`/server_log/"
 pub fn trace() -> tracing_appender::non_blocking::WorkerGuard {
     let mut log_dir = std::env::current_exe().expect("failed to read cur exe");
     log_dir.pop();

@@ -12,4 +12,6 @@ tokio = { workspace = true, features = ["full"] }
 tokio-util.workspace = true
 tokio-stream.workspace = true 
 bytes.workspace = true
-sha256.workspace = true
+rsa.workspace = true
+rand.workspace = true
+colored.workspace = true

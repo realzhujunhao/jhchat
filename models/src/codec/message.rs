@@ -1,5 +1,8 @@
+use std::fmt::Display;
+
 use crate::codec::command::Command;
 use bytes::{BufMut, BytesMut};
+use colored::*;
 
 #[derive(Debug)]
 pub enum Content {
@@ -85,6 +88,26 @@ impl From<Message> for BytesMut {
     }
 }
 
+impl Display for Message {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use Content::*;
+        let content: &str = match &self.content {
+            Text(ref s) => s,
+            File(_) => {
+                ""
+            }
+        };
+        write!(
+            f,
+            "{} -{}-> {}: {}",
+            self.sender.green(),
+            self.command.as_ref().yellow(),
+            self.receiver.green(),
+            content.yellow()
+        )
+    }
+}
+
 impl Message {
     fn args_string(&self) -> String {
         let filename = match self.content {
@@ -99,13 +122,31 @@ impl Message {
             filename
         )
     }
-    
+
     pub fn login(uid: &str) -> Self {
         Self {
             sender: "".into(),
             receiver: "".into(),
             command: Command::Login,
             content: Content::Text(uid.into()),
+        }
+    }
+
+    pub fn get_rsa(to: &str) -> Self {
+        Self {
+            sender: "".into(),
+            receiver: to.into(),
+            command: Command::GetRSA,
+            content: Content::Text("".into()),
+        }
+    }
+
+    pub fn send_rsa(to: &str, rsa: &str) -> Self {
+        Self {
+            sender: "".into(),
+            receiver: to.into(),
+            command: Command::SendRSA,
+            content: Content::Text(rsa.into()),
         }
     }
 

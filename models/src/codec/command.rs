@@ -1,22 +1,18 @@
 use bytes::BytesMut;
-use strum::{IntoStaticStr, EnumString};
 use std::str::FromStr;
 
-use crate::codec::message::{Content, Message, FileData};
+use crate::codec::message::{Content, FileData, Message};
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, IntoStaticStr, EnumString)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, strum::AsRefStr, strum::EnumString)]
 pub enum Command {
     Help,
     Login,
     OnlineList,
     SendMsg,
     SendImage,
-}
-
-impl From<Command> for BytesMut {
-    fn from(value: Command) -> Self {
-        BytesMut::from(Into::<&str>::into(value))
-    }
+    GetRSA,
+    SendRSA,
+    RemoteError,
 }
 
 impl From<BytesMut> for Command {
@@ -25,14 +21,15 @@ impl From<BytesMut> for Command {
     }
 }
 
+impl From<Command> for BytesMut {
+    fn from(value: Command) -> Self {
+        BytesMut::from(value.as_ref())
+    }
+}
+
 impl Command {
     pub fn help() -> Message {
-        let content_text = format!(
-            "\n{}\n{}\n{}\n",
-            r"OnlineList#0,,|$ -> request online user list",
-            r"SendMsg#{length},{receiver},|{msg}$  ->  send msg",
-            r"SendImage#{length},{receiver},{filename}|{bytes}$  ->  send image",
-        );
+        let content_text = String::from("");
         Message::send_text("", &content_text).set_sender("Server")
     }
 

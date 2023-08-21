@@ -1,42 +1,207 @@
-use std::{fmt::Display, net::SocketAddr};
+use colored::*;
+use std::{fmt::Display, str::FromStr};
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type GlobalResult<T> = std::result::Result<T, GlobalError>;
+pub type ClientResult<T> = std::result::Result<T, ClientError>;
+impl std::error::Error for GlobalError {}
 
 #[derive(Debug)]
-pub enum Error {
-    Listen(String),
-    Config,
-    ConnectionFail(SocketAddr),
-    Disconnect,
-    Offline(String),
-    RequestFormat,
-    Unreachable,
-    ServerToClient,
-    ClientToServer,
-    InvalidMessage,
-    Channel,
-    RwLock,
-    FilePath(String),
+pub struct GlobalError {
+    pub err: ErrorType,
+    pub info: Option<String>,
 }
 
-impl Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Offline(user) => write!(f, "Offline {}", user),
-            Self::Disconnect => write!(f, "Disconnect"),
-            Self::RequestFormat => write!(f, "RequestFormat"),
-            Self::Unreachable => write!(f, "Unreachable"),
-            Self::ServerToClient => write!(f, "ServerToClient"),
-            Self::InvalidMessage => write!(f, "InvalidMessage"),
-            Self::Channel => write!(f, "Channel"),
-            Self::RwLock => write!(f, "RwLock"),
-            Self::Listen(port) => write!(f, "Listen {}", port),
-            Self::Config => write!(f, "Config"),
-            Self::FilePath(path) => write!(f, "FilePath {:?}", path),
-            Self::ConnectionFail(addr) => write!(f, "ConnectionFail {:?}", addr),
-            Self::ClientToServer => write!(f, "ClientToServer"),
+#[derive(Debug)]
+pub enum ErrorType {
+    Client(ClientError),
+    Server(ServerError),
+    External(ExternalError),
+}
+
+impl ClientError {
+    pub fn info(self, i: &str) -> GlobalError {
+        GlobalError {
+            err: ErrorType::Client(self),
+            info: Some(i.into()),
         }
     }
 }
 
-impl std::error::Error for Error {}
+impl ServerError {
+    pub fn info(self, i: &str) -> GlobalError {
+        GlobalError {
+            err: ErrorType::Server(self),
+            info: Some(i.into()),
+        }
+    }
+}
+
+impl ExternalError {
+    pub fn info(self, i: &str) -> GlobalError {
+        GlobalError {
+            err: ErrorType::External(self),
+            info: Some(i.into()),
+        }
+    }
+}
+
+impl From<ClientError> for GlobalError {
+    fn from(value: ClientError) -> Self {
+        Self {
+            err: ErrorType::Client(value),
+            info: None,
+        }
+    }
+}
+
+impl From<ServerError> for GlobalError {
+    fn from(value: ServerError) -> Self {
+        Self {
+            err: ErrorType::Server(value),
+            info: None,
+        }
+    }
+}
+
+impl From<ExternalError> for GlobalError {
+    fn from(value: ExternalError) -> Self {
+        Self {
+            err: ErrorType::External(value),
+            info: None,
+        }
+    }
+}
+
+impl From<String> for GlobalError {
+    fn from(value: String) -> Self {
+        use ErrorType::*;
+        let (source, error_t) = value
+            .split_once('-')
+            .unwrap_or(("Client", "Unknown: cannot deserialize this error"));
+        let (error, info) = match error_t.split_once(": ") {
+            Some((e, i)) => (e, Some(i.into())),
+            None => (error_t, None),
+        };
+        match source {
+            "Server" => Self {
+                err: Server(ServerError::from_str(error).unwrap_or(ServerError::Unknown)),
+                info,
+            },
+            "External" => Self {
+                err: External(ExternalError::from_str(error).unwrap_or(ExternalError::Unknown)),
+                info,
+            },
+            _ => Self {
+                err: Client(ClientError::from_str(error).unwrap_or(ClientError::Unknown)),
+                info,
+            },
+        }
+    }
+}
+
+impl From<GlobalError> for String {
+    fn from(value: GlobalError) -> Self {
+        use ErrorType::*;
+        let info = if let Some(i) = value.info {
+            format!(": {}", i)
+        } else {
+            String::new()
+        };
+        match value.err {
+            Client(e) => format!("Client-{}{}", e.as_ref(), info),
+            Server(e) => format!("Server-{}{}", e.as_ref(), info),
+            External(e) => format!("External-{}{}", e.as_ref(), info),
+        }
+    }
+}
+
+impl Display for GlobalError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use ErrorType::*;
+        let info = if let Some(i) = &self.info {
+            format!(": {}", i.yellow())
+        } else {
+            String::new()
+        };
+        match &self.err {
+            Client(e) => write!(f, "Client-{}{}", e.as_ref().red(), info),
+            Server(e) => write!(f, "Server-{}{}", e.as_ref().red(), info),
+            External(e) => write!(f, "External-{}{}", e.as_ref().red(), info),
+        }
+    }
+}
+
+#[derive(Debug, strum::AsRefStr, strum::EnumString)]
+pub enum ClientError {
+    ReceiverNotExist,
+    CannotEstablishConnection,
+    AuthenticationFailed,
+    ServerDisconnected,
+    Unknown,
+}
+
+#[derive(Debug, strum::AsRefStr, strum::EnumString)]
+pub enum ServerError {
+    UserDisconnect,
+    DuplicatedAuth,
+    UnexpectedFrame,
+    Unknown,
+}
+
+#[derive(Debug, strum::AsRefStr, strum::EnumString)]
+pub enum ExternalError {
+    ListenPort,
+    IO,
+    Concurrent,
+    DeserializeToml,
+    SerializeToml,
+    DeserializeFrame,
+    SerializeFrame,
+    TokioChannel,
+    Unknown,
+}
+
+// ? implicitly invokes `into()`, `From<T>` gives T.into() for free
+
+impl<T> From<tokio::sync::mpsc::error::SendError<T>> for GlobalError{
+    fn from(value: tokio::sync::mpsc::error::SendError<T>) -> Self {
+        ExternalError::TokioChannel.info(&format!("{}", value))
+    }
+}
+
+impl<T> From<tokio::sync::mpsc::error::SendTimeoutError<T>> for GlobalError {
+    fn from(value: tokio::sync::mpsc::error::SendTimeoutError<T>) -> Self {
+        ExternalError::TokioChannel.info(&format!("{}", value))
+    }
+}
+
+impl<T> From<tokio::sync::mpsc::error::TrySendError<T>> for GlobalError {
+    fn from(value: tokio::sync::mpsc::error::TrySendError<T>) -> Self {
+        ExternalError::TokioChannel.info(&format!("{}", value))
+    }
+}
+
+impl From<tokio::sync::mpsc::error::TryRecvError> for GlobalError {
+    fn from(value: tokio::sync::mpsc::error::TryRecvError) -> Self {
+        ExternalError::TokioChannel.info(&format!("{}", value))
+    }
+}
+
+impl From<std::io::Error> for GlobalError {
+    fn from(value: std::io::Error) -> Self {
+        ExternalError::IO.info(&format!("{}", value))  
+    }
+}
+
+impl From<toml::de::Error> for GlobalError {
+    fn from(value: toml::de::Error) -> Self {
+        ExternalError::DeserializeToml.info(&format!("{}", value))
+    }
+}
+
+impl From<toml::ser::Error> for GlobalError {
+    fn from(value: toml::ser::Error) -> Self {
+        ExternalError::SerializeToml.info(&format!("{}", value))
+    }
+}
+

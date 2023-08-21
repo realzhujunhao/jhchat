@@ -1,6 +1,6 @@
 use crate::{
     codec::message::Message,
-    error::{Error, Result},
+    error::{GlobalResult, ClientError},
 };
 
 use std::collections::HashMap;
@@ -45,11 +45,11 @@ impl OnlineUsers {
     /// send a `Message` to `receiver`
     /// `Offline` error if `receiver` is not a key in the map
     /// `Channel` error if the sender fails
-    pub async fn send(&self, receiver: &str, msg: Message) -> Result<()> {
+    pub async fn send(&self, receiver: &str, msg: Message) -> GlobalResult<()> {
         let list = self.list.read().await;
-        let tx = list.get(receiver).ok_or(Error::Offline(receiver.into()))?;
+        let tx = list.get(receiver).ok_or(ClientError::ReceiverNotExist.info(&msg.receiver))?;
         let tx = tx.lock().await;
-        tx.send(msg.set_receiver(receiver)).map_err(|_| Error::Channel)?;
+        tx.send(msg.set_receiver(receiver))?;
         Ok(())
     }
 }

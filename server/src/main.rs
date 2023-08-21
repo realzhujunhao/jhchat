@@ -13,15 +13,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let online_users = Arc::new(OnlineUsers::new());
     let listener = init::listen(&config.ip, &config.port).await?;
 
-    tracing::info!("this is a test log");
-
     loop {
         let online_users = Arc::clone(&online_users);
         let (stream, addr) = listener.accept().await?;
 
         tokio::spawn(async move {
             let result = process(stream, addr, online_users).await;
-            handler::error(result);
+            handler::record(result);
         });
     }
 
