@@ -63,6 +63,7 @@ pub async fn process(
                 };
             if let Err(e) = result {
                 let _ = e_tx_2.send(e);
+                break;
             }
         }
     });
