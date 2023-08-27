@@ -3,13 +3,11 @@ use std::io;
 use std::{cmp, usize};
 use tokio_util::codec::{Decoder, Encoder};
 
-use crate::codec::{
-    command::Command,
-    message::{Content, Message},
-};
+use crate::codec::{command::Command, message::Message};
 
 /// the four states in MessageDecoder
 /// `Command`, `Args`, `Content` are stages that parse sections w.r.t their name
+/// note that `Command` and `Args` are utf-8 encoded, while `Content` is binary data
 /// `Discarding` stage clears the read buffer to make sure later frames are not affected  
 #[derive(Debug)]
 pub enum MsgCodecStatus {
@@ -25,7 +23,7 @@ pub struct MsgCodec {
     // Command in `Message`
     command: Option<Command>,
 
-    // [content-length, sender, receiver, filename]
+    // [content-length, sender, receiver]
     args: Option<Vec<String>>,
 
     // max length of `Command` and `Args`
@@ -158,7 +156,7 @@ fn read_args(codec: &mut MsgCodec, buf: &mut BytesMut) -> Result<Option<Vec<Stri
 
             let args_string = String::from_utf8_lossy(&args_bytes).to_string();
             let args_vec: Vec<String> = args_string.split(',').map(|s| s.into()).collect();
-            if args_vec.len() != 4 {
+            if args_vec.len() != 3 {
                 return Err(());
             }
 
@@ -173,10 +171,10 @@ impl Decoder for MsgCodec {
     type Error = io::Error;
 
     /// MessageDecoder is a state machine with four states
-    /// note that `Message` can be serialized into three sections
+    /// `Message` can be serialized into three sections
     /// [Command, Arguments, Content]
-    /// where Arguments = `content-length,sender,receiver,filename`
-    /// bytes format: `command#length,sender,receiver,filename|content$`
+    /// where Arguments = `content-length,sender,receiver`
+    /// bytes format: `command#length,sender,receiver|content$`
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         loop {
             match self.status() {
@@ -217,12 +215,6 @@ impl Decoder for MsgCodec {
                     let receiver = args[2].clone();
 
                     let content_bytes = buf.split_to(self.content_len);
-                    let content = match command.content() {
-                        Content::Text(_) => {
-                            Content::Text(String::from_utf8_lossy(&content_bytes).to_string())
-                        }
-                        Content::File(_) => Content::file(&args[3], content_bytes),
-                    };
 
                     buf.advance(1);
                     self.reset();
@@ -231,7 +223,7 @@ impl Decoder for MsgCodec {
                         sender,
                         receiver,
                         command,
-                        content,
+                        content: content_bytes.to_vec(),
                     }));
                 }
                 MsgCodecStatus::Discarding => {

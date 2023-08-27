@@ -134,6 +134,10 @@ impl Display for GlobalError {
 #[derive(Debug, strum::AsRefStr, strum::EnumString)]
 pub enum ClientError {
     ReceiverNotExist,
+    EncryptKeyGeneration,
+    EncryptKeyPersistence,
+    Encryption,
+    Decryption,
     CannotEstablishConnection,
     AuthenticationFailed,
     ServerDisconnected,
@@ -150,6 +154,7 @@ pub enum ServerError {
 
 #[derive(Debug, strum::AsRefStr, strum::EnumString)]
 pub enum ExternalError {
+    Initialize,
     ListenPort,
     IO,
     Concurrent,
@@ -189,19 +194,38 @@ impl From<tokio::sync::mpsc::error::TryRecvError> for GlobalError {
 
 impl From<std::io::Error> for GlobalError {
     fn from(value: std::io::Error) -> Self {
-        ExternalError::IO.info(&format!("{}", value))  
+        wrap_e(ExternalError::IO, value)
     }
 }
 
 impl From<toml::de::Error> for GlobalError {
     fn from(value: toml::de::Error) -> Self {
-        ExternalError::DeserializeToml.info(&format!("{}", value))
+        wrap_e(ExternalError::DeserializeToml, value)
     }
 }
 
 impl From<toml::ser::Error> for GlobalError {
     fn from(value: toml::ser::Error) -> Self {
-        ExternalError::SerializeToml.info(&format!("{}", value))
+        wrap_e(ExternalError::SerializeToml, value)
     }
 }
 
+impl From<rsa::Error> for GlobalError {
+    fn from(value: rsa::Error) -> Self {
+        wrap_c(ClientError::EncryptKeyGeneration, value) 
+    }
+}
+
+impl From<rsa::pkcs8::Error> for GlobalError {
+    fn from(value: rsa::pkcs8::Error) -> Self {
+        wrap_c(ClientError::EncryptKeyPersistence, value) 
+    }
+}
+
+fn wrap_c(e: ClientError, v: impl std::error::Error) -> GlobalError {
+    e.info(&format!("{}", v))
+}
+
+fn wrap_e(e: ExternalError, v: impl std::error::Error) -> GlobalError {
+    e.info(&format!("{}", v))
+}

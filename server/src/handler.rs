@@ -1,10 +1,10 @@
-use models::{
+use core::{
     codec::{
         command::Command,
-        message::{Content, Message},
+        message::Message,
         msg_codec::MsgCodec,
     },
-    error::{GlobalResult, ServerError, ErrorType, ExternalError},
+    error::{ErrorType, ExternalError, GlobalResult, ServerError},
     server_state::OnlineUsers,
 };
 use std::{net::SocketAddr, sync::Arc};
@@ -25,29 +25,19 @@ pub async fn authenticate(
         //     2. check `Command`
         Some(Ok(msg)) => match msg.command {
             // 2.1 `Command` is `Login`
-            //     3. check `Content`
-            Command::Login => match msg.content {
-                // 3.1 correct format
-                Content::Text(name) => {
-                    let (tx, rx) = mpsc::unbounded_channel();
-                    online_users.add_user(&name, tx).await;
-                    tracing::info!("{} has joined server", name);
-                    Ok((name, rx))
-                }
-                // 3.2 wrong format
-                _ => {
-                    tracing::warn!("{} command is login but content is not text", addr);
-                    Err(ServerError::UnexpectedFrame.into())
-                }
-            },
-
+            Command::Login => {
+                let uid = msg.sender;
+                let (tx, rx) = mpsc::unbounded_channel();
+                online_users.add_user(&uid, tx).await;
+                tracing::info!("{} has joined server", uid);
+                Ok((uid, rx))
+            }
             // 2.2 `Command` is NOT `Login`
             _ => {
                 tracing::warn!("{} command is not login during authentication", addr);
                 Err(ServerError::UnexpectedFrame.into())
             }
         },
-
         // 1.2 deserialization failed
         _ => {
             tracing::warn!("cannot deserialize tokens received from {}", addr);
@@ -60,16 +50,20 @@ pub fn record(result: GlobalResult<()>) {
     use ErrorType::*;
     match result {
         Ok(()) => (),
-        Err(e) => {
-            match e.err {
-                Client(_) => (),
-                Server(e) => {
-                    tracing::warn!("{}", &format!("recover() dropped connection due to {}", e.as_ref()));
-                }
-                External(e) => {
-                    tracing::warn!("{}", &format!("recover() dropped connection due to {}", e.as_ref()));
-                }
+        Err(e) => match e.err {
+            Client(_) => (),
+            Server(e) => {
+                tracing::warn!(
+                    "{}",
+                    &format!("recover() dropped connection due to {}", e.as_ref())
+                );
             }
-        }
+            External(e) => {
+                tracing::warn!(
+                    "{}",
+                    &format!("recover() dropped connection due to {}", e.as_ref())
+                );
+            }
+        },
     }
 }

@@ -1,4 +1,4 @@
-use models::{
+use core::{
     config::{Config, ServerConfig},
     error::{GlobalResult, ExternalError},
 };
@@ -7,7 +7,7 @@ use tokio::net::TcpListener;
 use tracing_subscriber::{
     fmt::{self, format::FmtSpan, time::OffsetTime},
     prelude::__tracing_subscriber_SubscriberExt,
-    util::SubscriberInitExt,
+    util::SubscriberInitExt, Layer, filter::LevelFilter,
 };
 
 #[tracing::instrument]
@@ -46,7 +46,7 @@ pub fn trace() -> tracing_appender::non_blocking::WorkerGuard {
         .with_file(true)
         .with_writer(non_blocking)
         .with_ansi(false)
-        .compact();
+        .with_filter(LevelFilter::INFO);
 
     let std_layer = fmt::layer()
         .with_timer(timer)
@@ -54,7 +54,7 @@ pub fn trace() -> tracing_appender::non_blocking::WorkerGuard {
         .with_thread_ids(true)
         .with_file(true)
         .with_span_events(FmtSpan::ACTIVE)
-        .compact();
+        .with_filter(LevelFilter::INFO);
 
     tracing_subscriber::registry()
         .with(file_layer)

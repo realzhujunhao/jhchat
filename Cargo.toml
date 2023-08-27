@@ -3,7 +3,7 @@ resolver = "2"
 members = [
     "server", 
     "client", 
-    "models"
+    "core"
 ]
 
 [workspace.dependencies]
@@ -27,3 +27,4 @@ time = "0.3"
 rsa = "0.9"
 rand = "0.8"
 colored = "2"
+async-trait = "0.1"

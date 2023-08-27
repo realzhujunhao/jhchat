@@ -1,7 +1,7 @@
 use crate::handler;
 use futures::SinkExt;
-use models::error::{GlobalResult, ServerError, ExternalError};
-use models::{
+use core::error::{GlobalResult, ServerError, ExternalError};
+use core::{
     codec::{command::Command, message::Message, msg_codec::MsgCodec},
     server_state::OnlineUsers,
 };
@@ -90,18 +90,13 @@ async fn handle_incoming_msg(
                 .send(&msg.get_receiver(), msg.set_sender(uid))
                 .await
         }
-        Command::SendImage => {
-            online_users
-                .send(&msg.get_receiver(), msg.set_sender(uid))
-                .await
-        }
         Command::Help => online_users.send(uid, Command::help()).await,
-        Command::GetRSA => {
+        Command::GetPubKey=> {
             online_users
                 .send(&msg.get_receiver(), msg.set_sender(uid))
                 .await
         }
-        Command::SendRSA => {
+        Command::SendPubKey=> {
             online_users
                 .send(&msg.get_receiver(), msg.set_sender(uid))
                 .await

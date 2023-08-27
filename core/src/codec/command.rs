@@ -1,7 +1,7 @@
 use bytes::BytesMut;
 use std::str::FromStr;
 
-use crate::codec::message::{Content, FileData, Message};
+use crate::codec::message::Message;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, strum::AsRefStr, strum::EnumString)]
 pub enum Command {
@@ -9,9 +9,8 @@ pub enum Command {
     Login,
     OnlineList,
     SendMsg,
-    SendImage,
-    GetRSA,
-    SendRSA,
+    GetPubKey,
+    SendPubKey,
     RemoteError,
 }
 
@@ -29,14 +28,6 @@ impl From<Command> for BytesMut {
 
 impl Command {
     pub fn help() -> Message {
-        let content_text = String::from("");
-        Message::send_text("", &content_text).set_sender("Server")
-    }
-
-    pub fn content(&self) -> Content {
-        match self {
-            Self::SendImage => Content::File(FileData::default()),
-            _ => Content::Text(String::default()),
-        }
+        Message::send_text("", b"").set_sender("Server")
     }
 }

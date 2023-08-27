@@ -1,5 +1,5 @@
 [package]
-name = "models"
+name = "core"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
-serde_json.workspace = true
 toml.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
@@ -19,4 +18,7 @@ colored.workspace = true
 chrono = { workspace = true, features = ["unstable-locales"] }
 strum = { workspace = true, features = ["derive"] }
 uuid = { workspace = true, features = ["v4", "fast-rng", "macro-diagnostics"] }
+rsa.workspace = true
+rand.workspace = true
+async-trait.workspace = true
 

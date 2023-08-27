@@ -3,7 +3,7 @@ mod process; mod handler;
 use std::{error::Error, sync::Arc};
 
 use process::process;
-use models::server_state::OnlineUsers;
+use core::server_state::OnlineUsers;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {

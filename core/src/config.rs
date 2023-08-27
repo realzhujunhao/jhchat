@@ -1,3 +1,4 @@
+use rsa::{RsaPublicKey, RsaPrivateKey};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
     env,
@@ -7,7 +8,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::error::GlobalResult;
+use crate::error::{ExternalError, GlobalResult};
 
 // type AnyResult<T> = Result<T, Box<dyn Error>>;
 
@@ -34,7 +35,10 @@ pub trait Config: DeserializeOwned + Serialize {
                 let default_config = Self::associated_default();
                 let content = toml::to_string_pretty(&default_config)?;
                 Self::write_string(&content)?;
-                Ok(default_config)
+                Err(ExternalError::Initialize.info(&format!(
+                    "a default configuration has been generated at {:?}, please restart after modification",
+                    Self::config_path()?
+                )))
             }
         }
     }
@@ -105,7 +109,8 @@ impl Default for ServerConfig {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ClientConfig {
     pub server_host: String,
-    pub crypto: Crypto,
+    pub uid: String,
+    pub encryption: Encryption,
 }
 
 impl Config for ClientConfig {
@@ -127,23 +132,26 @@ impl Default for ClientConfig {
     fn default() -> Self {
         Self {
             server_host: "0.0.0.0:2333".into(),
-            crypto: Crypto::default(),
+            uid: "user".into(),
+            encryption: Encryption::default(),
         }
     }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Crypto {
+pub struct Encryption {
+    pub key_len: usize,
+
     // public key and private key of current user
-    pub rsa_self_dir: String,
+    pub self_key_dir: String,
 
     // public keys from server
     // keys exchanged via chat server
-    pub rsa_unsafe_dir: String,
+    pub unsafe_key_dir: String,
 
     // public keys from third party communication
     // keys exchanged via email, offline, etc.
-    pub rsa_safe_dir: String,
+    pub safe_key_dir: String,
 
     // when the public key provided is not identical to the one in rsa_safe_dir
     // original message will be cancelled (with warning to user)
@@ -155,20 +163,29 @@ pub struct Crypto {
     // the one in rsa_safe_dir
     // if this value is set to `true`, only the first original message will be cancelled
     pub send_on_unsafe: bool,
+
+    // public key and private key
+    #[serde(skip)]
+    pub rsa_self_pub_key: Option<RsaPublicKey>,
+    #[serde(skip)]
+    pub rsa_self_priv_key: Option<RsaPrivateKey>,
 }
 
-impl Default for Crypto {
+impl Default for Encryption {
     fn default() -> Self {
         let exe = env::current_exe().unwrap_or_default();
         let exe_dir = exe.parent().unwrap_or(Path::new("./"));
-        let rsa_self_dir = exe_dir.join("rsa_self").to_string_lossy().into();
-        let rsa_unsafe_dir = exe_dir.join("rsa_unsafe").to_string_lossy().into();
-        let rsa_safe_dir = exe_dir.join("rsa_safe").to_string_lossy().into();
+        let self_key_dir = exe_dir.join("self_key").to_string_lossy().into();
+        let unsafe_key_dir = exe_dir.join("unsafe_key").to_string_lossy().into();
+        let safe_key_dir = exe_dir.join("safe_key").to_string_lossy().into();
         Self {
-            rsa_self_dir,
-            rsa_unsafe_dir,
-            rsa_safe_dir,
-            dummy_msg: "hello".into(),
+            key_len: 4096,
+            self_key_dir,
+            unsafe_key_dir,
+            safe_key_dir,
+            rsa_self_pub_key: None,
+            rsa_self_priv_key: None,
+            dummy_msg: "hello?".into(),
             send_on_unsafe: false,
         }
     }
