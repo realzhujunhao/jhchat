@@ -35,6 +35,7 @@ However, no one can prevent the server from doing this
 | Application Protocol       | Done        | core/src/codec/msg_codec.rs | tokio-util     |
 | Message Delivery           | Done        | server/src/process.rs       | N/A            |
 | Log                        | Done        | server/src/init.rs          | tracing        |
+| Config                     | Done        | core/src/config.rs          | serde + toml   |
 | Client Encryption          | Done        | core/encryption/rsa_impl.rs | RustCrypto/RSA |
 | Customizable Encryption    | Done        | core/traits/encrypt.rs      | N/A            |
 | Exchange Public Key        | Done        | server/src/process.rs       | N/A            |
