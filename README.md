@@ -20,11 +20,13 @@ In short, this project assumes that the server and the current computer user are
 It is quite inconvenient to manually exchange public keys when users don't trust the server, but for now  I am not aware of any alternative solution.
 
 Ideally, users expect the following would happen when they send a message
-![image-20230828014621450](/Users/junhaozhu/Library/Application Support/typora-user-images/image-20230828014621450.png)
+<img width="534" alt="expected" src="https://github.com/realzhujunhao/jhchat/assets/63294481/3b72b5d7-6966-476a-89ed-40715cd9a63f">
+
 
 However, no one can prevent the server from doing this
 
-![image-20230828014714082](/Users/junhaozhu/Library/Application Support/typora-user-images/image-20230828014714082.png)
+<img width="669" alt="unexpected" src="https://github.com/realzhujunhao/jhchat/assets/63294481/a5759071-cc2a-457e-81ef-1c872cfbf324">
+
 
 #### MileStone
 
