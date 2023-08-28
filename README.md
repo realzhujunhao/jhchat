@@ -3,7 +3,7 @@
 
 - Users trust `Client` (They build it from source)
 
-- `Client` can decide not to trust `Server` (By default key is exchanged through server)
+- `Client` can decide not to trust `Server` (By default public keys are exchanged through server)
   - User may manually set other's public key via third party communication
   - A pre-configured dummy message is sent if the key delivered by server is not identical
     - with warnings on client side
