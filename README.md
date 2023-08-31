@@ -1,8 +1,7 @@
 # jhchat
 #### Goals
 
-- Users trust `Client` (They build it from source)
-
+- Users do trust `Client` (They build it from source)
 - `Client` can decide not to trust `Server` (By default public keys are exchanged through server)
   - User may manually set other's public key via third party communication
   - A pre-configured dummy message is sent if the key delivered by server is not identical
@@ -30,20 +29,24 @@ However, no one can prevent the server from doing this
 
 #### MileStone
 
-| Feature                    | Status      | Source Path                 | Lib            |
-| :------------------------- | ----------- | --------------------------- | -------------- |
-| Application Protocol       | Done        | core/src/codec/msg_codec.rs | tokio-util     |
-| Message Delivery           | Done        | server/src/process.rs       | N/A            |
-| Log                        | Done        | server/src/init.rs          | tracing        |
-| Config                     | Done        | core/src/config.rs          | serde + toml   |
-| Client Encryption          | Done        | core/encryption/rsa_impl.rs | RustCrypto/RSA |
-| Customizable Encryption    | Done        | core/traits/encrypt.rs      | N/A            |
-| Exchange Public Key        | Done        | server/src/process.rs       | N/A            |
-| "do not trust server" Mode | Coming Next |                             | N/A            |
-| Authentication             | To Do       |                             | TBD            |
-| Encrypt Keys on Client     | To Do       |                             | TBD            |
-| Persistence                | To Do       |                             | diesel         |
-| Horizontal Scaling         | To Do       |                             | TBD            |
+| Feature                        | Status      | Source Path                 | Lib            |
+| :----------------------------- | ----------- | --------------------------- | -------------- |
+| Application Protocol           | Done        | core/src/codec/msg_codec.rs | tokio-util     |
+| Message Delivery               | Done        | server/src/process.rs       | N/A            |
+| Log                            | Done        | server/src/init.rs          | tracing        |
+| Config                         | Done        | core/src/config.rs          | serde + toml   |
+| Client Encryption              | Done        | core/encryption/rsa_impl.rs | RustCrypto/rsa |
+| Customizable Encryption        | Done        | core/traits/encrypt.rs      | N/A            |
+| Exchange Public Key            | Done        | server/src/process.rs       | N/A            |
+| Offline Pubkey Mode            | Coming Next |                             | N/A            |
+| Update Key Strategy            | Coming Next |                             | N/A            |
+| Authentication                 | To Do       |                             | TBD            |
+| Unsafe Group Chat              | To Do       |                             | N/A            |
+| Expensive Group Chat (e2ee)    | To Do       |                             | N/A            |
+| File Server (RSA + AES)        | To Do       |                             | RustCrypto/aes |
+| Encrypt Private Keys on Client | To Do       |                             | TBD            |
+| Chat History Persistence       | To Do       |                             | diesel         |
+| Horizontal Scaling             | To Do       |                             | TBD            |
 
 #### Build From Source
 
