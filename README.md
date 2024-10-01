@@ -1,4 +1,16 @@
 # jhchat
+#### UPDATE
+haven't taken security course when I made this. 
+If I were to make such app now, a few changes would have been made:
+- Instead of plain TCP connection, I would look for TLS libraries
+- Dilemma below could be solved by either
+  - trust a Certificate Authority
+  - adopt DPKI, make use of block chain to exchange key pairs
+- Use `thiserror` to define my error types
+- Use `tonic` (grpc) or `axum` (http) instead of making my own protocol
+- Replace the encryption library by openssl bindings
+- Avoid some silly code in my current perspective
+
 #### Goals
 
 - Users do trust `Client` (They build it from source)
@@ -17,8 +29,6 @@ In short, this project assumes that the server and the current computer user are
 #### Dilemma
 
 It is quite inconvenient to manually exchange public keys when users don't trust the server, but for now I am not aware of any alternative solution.
-UPDATE: didn't take security course when I made this, now I know the solution -> issue certificate from CA.
-ALSO, key exchange in plain text is BAD, should have used TLS
 
 Ideally, users expect the following would happen when they send a message
 <img width="534" alt="expected" src="https://github.com/realzhujunhao/jhchat/assets/63294481/3b72b5d7-6966-476a-89ed-40715cd9a63f">
